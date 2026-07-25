@@ -1,0 +1,1 @@
+function t(){if(typeof navigator>"u")return!1;const e=navigator.userAgent||"";return e.includes("Valve Steam Tenfoot")?!1:e.includes("Valve Steam GameOverlay")||e.includes("Valve Steam Client")}function r(e){const n=String(e||"").trim();if(!(!n||typeof window>"u")){if(t()){window.location.href=`steam://openurl_external/${n}`;return}window.location.href=n}}export{r as o};

@@ -1,0 +1,18 @@
+services:
+  cscanner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cscanner:latest
+    container_name: cscanner
+    restart: unless-stopped
+    ports:
+      # Host 3003 — free on this host (3000–3002 already in use).
+      - "3003:3000"
+    environment:
+      STEAM_API_KEY: ${STEAM_API_KEY}
+      FACEIT_API_KEY: ${FACEIT_API_KEY:-}
+      LEETIFY_API_KEY: ${LEETIFY_API_KEY:-}
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
