@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
+import { CHUNK_BYTES, MAX_DEMO_BYTES } from "@/lib/demo/uploadLimits";
 import {
-  CHUNK_BYTES,
   initUploadSession,
-  MAX_DEMO_BYTES,
   writeUploadChunk,
 } from "@/lib/demo/uploadSession";
 
@@ -34,7 +33,7 @@ export async function POST(request: Request) {
     if (!(chunk instanceof Blob)) {
       return NextResponse.json({ error: "Missing chunk blob." }, { status: 400 });
     }
-    if (chunk.size <= 0 || chunk.size > CHUNK_BYTES + 64 * 1024) {
+    if (chunk.size <= 0 || chunk.size > CHUNK_BYTES + 256 * 1024) {
       return NextResponse.json(
         { error: `Chunk too large (max ~${CHUNK_BYTES} bytes).` },
         { status: 413 },

@@ -1,18 +1,12 @@
+import "server-only";
+
 import { createWriteStream } from "node:fs";
-import {
-  mkdir,
-  readdir,
-  readFile,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import { MAX_DEMO_BYTES } from "./uploadLimits";
-
-export { CHUNK_BYTES, MAX_DEMO_BYTES } from "./uploadLimits";
 
 export function uploadSessionDir(uploadId: string): string {
   // Only allow UUID-like ids in path segments.
@@ -39,19 +33,61 @@ export async function writeUploadChunk(
   await writeFile(join(dir, `${index}.part`), data);
 }
 
+/** Concatenate parts directly to a single file (avoids one huge Buffer in RAM). */
+export async function assembleUploadChunksToFile(
+  uploadId: string,
+  totalChunks: number,
+  destPath: string,
+): Promise<number> {
+  if (
+    !Number.isInteger(totalChunks) ||
+    totalChunks <= 0 ||
+    totalChunks > 200_000
+  ) {
+    throw new Error("Invalid chunk count.");
+  }
+  const dir = uploadSessionDir(uploadId);
+  const out = createWriteStream(destPath);
+  let total = 0;
+  try {
+    for (let i = 0; i < totalChunks; i++) {
+      const buf = await readFile(join(dir, `${i}.part`));
+      total += buf.length;
+      if (total > MAX_DEMO_BYTES) {
+        throw new Error("Demo file is too large (max 500 MB).");
+      }
+      const ok = out.write(buf);
+      if (!ok) {
+        await new Promise<void>((resolve) => out.once("drain", resolve));
+      }
+    }
+    await new Promise<void>((resolve, reject) => {
+      out.end(() => resolve());
+      out.on("error", reject);
+    });
+  } catch (err) {
+    out.destroy();
+    throw err;
+  }
+  return total;
+}
+
 export async function assembleUploadChunks(
   uploadId: string,
   totalChunks: number,
 ): Promise<Buffer> {
-  if (!Number.isInteger(totalChunks) || totalChunks <= 0 || totalChunks > 200_000) {
+  if (
+    !Number.isInteger(totalChunks) ||
+    totalChunks <= 0 ||
+    totalChunks > 200_000
+  ) {
     throw new Error("Invalid chunk count.");
   }
   const dir = uploadSessionDir(uploadId);
   const parts: Buffer[] = [];
   let total = 0;
   for (let i = 0; i < totalChunks; i++) {
-    const partPath = join(dir, `${i}.part`);
-    const buf = await readFile(partPath);
+    const buf = await readFile(join(dir, `${i}.part`));
     total += buf.length;
     if (total > MAX_DEMO_BYTES) {
       throw new Error("Demo file is too large (max 500 MB).");
@@ -69,7 +105,6 @@ export async function cleanupUploadSession(uploadId: string): Promise<void> {
   }
 }
 
-/** Debug helper — list part files in a session. */
 export async function listUploadParts(uploadId: string): Promise<string[]> {
   try {
     return await readdir(uploadSessionDir(uploadId));
