@@ -3,7 +3,11 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   allowedDevOrigins: ["172.20.224.1"],
-  serverExternalPackages: ["@laihoe/demoparser2"],
+  serverExternalPackages: [
+    "@laihoe/demoparser2",
+    "bullmq",
+    "ioredis",
+  ],
   outputFileTracingIncludes: {
     "/api/upload-demo": [
       "./node_modules/@laihoe/demoparser2/**/*",

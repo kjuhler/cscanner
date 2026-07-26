@@ -2,18 +2,17 @@ import "server-only";
 
 import { createWriteStream } from "node:fs";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
+import { uploadsRoot } from "./dataDir";
 import { MAX_DEMO_BYTES } from "./uploadLimits";
 
 export function uploadSessionDir(uploadId: string): string {
-  // Only allow UUID-like ids in path segments.
   if (!/^[a-zA-Z0-9_-]{8,80}$/.test(uploadId)) {
     throw new Error("Invalid upload id.");
   }
-  return join(tmpdir(), "cscanner-uploads", uploadId);
+  return join(uploadsRoot(), uploadId);
 }
 
 export async function initUploadSession(uploadId: string): Promise<void> {

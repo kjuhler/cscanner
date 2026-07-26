@@ -30,6 +30,7 @@ await esbuild.build({
   alias: {
     "server-only": join(root, "stubs/server-only.cjs"),
   },
+  // Keep native demoparser external; BullMQ/ioredis are bundled into the worker.
   external: ["@laihoe/demoparser2", "@laihoe/demoparser2-*"],
   plugins: [
     {

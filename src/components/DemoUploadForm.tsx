@@ -4,7 +4,6 @@ import { useCallback, useRef, useState } from "react";
 import {
   CHUNK_BYTES,
   MAX_DEMO_BYTES,
-  SINGLE_MAX_BYTES,
   UPLOAD_PARALLEL,
 } from "@/lib/demo/uploadLimits";
 
@@ -22,7 +21,6 @@ type ProgressState = {
   detail: string;
 };
 
-const SINGLE_TIMEOUT_MS = 2 * 60 * 1000;
 const CHUNK_RETRIES = 2;
 const POLL_MS = 400;
 
@@ -73,44 +71,6 @@ function formatElapsed(ms: number): string {
   const s = Math.floor(ms / 1000);
   if (s < 60) return `${s}s`;
   return `${Math.floor(s / 60)}m ${s % 60}s`;
-}
-
-function uploadSingle(
-  file: File,
-  onBytes: (loaded: number, total: number) => void,
-): Promise<{ ok: boolean; status: number; data: unknown }> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/upload-demo");
-    xhr.timeout = SINGLE_TIMEOUT_MS;
-
-    xhr.upload.onprogress = (e) => {
-      if (!e.lengthComputable || e.total <= 0) return;
-      onBytes(e.loaded, e.total);
-    };
-    xhr.upload.onload = () => onBytes(file.size, file.size);
-
-    xhr.onerror = () => reject(new Error("Network error during upload."));
-    xhr.ontimeout = () =>
-      reject(new Error("Upload timed out — try again or use a smaller file."));
-    xhr.onload = () => {
-      let data: unknown = {};
-      try {
-        data = JSON.parse(xhr.responseText || "{}");
-      } catch {
-        data = { error: xhr.responseText || "Invalid server response." };
-      }
-      resolve({
-        ok: xhr.status >= 200 && xhr.status < 300,
-        status: xhr.status,
-        data,
-      });
-    };
-
-    const body = new FormData();
-    body.append("demo", file);
-    xhr.send(body);
-  });
 }
 
 function postChunkXhr(
@@ -544,48 +504,8 @@ export function DemoUploadForm({ onAnalyzed, disabled }: Props) {
       startClock();
 
       try {
-        if (file.size > SINGLE_MAX_BYTES) {
-          const analysis = await uploadChunked(file, setProgress);
-          onAnalyzed(analysis);
-          setProgress(null);
-          return;
-        }
-
-        setProgress({
-          phase: "upload",
-          pct: 0,
-          label: `Uploading ${formatMb(file.size)} MB…`,
-          detail: "Single request",
-        });
-
-        const t0 = Date.now();
-        const result = await uploadSingle(file, (loaded, total) => {
-          const elapsedSec = Math.max(0.001, (Date.now() - t0) / 1000);
-          const speed = loaded / elapsedSec;
-          const eta =
-            speed > 0
-              ? (total - loaded) / speed
-              : Number.POSITIVE_INFINITY;
-          setProgress({
-            phase: "upload",
-            pct: Math.min(99, Math.round((loaded / total) * 100)),
-            label: `${formatMb(loaded)} / ${formatMb(total)} MB · ${formatMb(speed)} MB/s · ETA ${formatEta(eta)}`,
-            detail: "Single request",
-          });
-        });
-
-        if (!result.ok) {
-          const payload = result.data as { error?: string };
-          throw new Error(payload.error || `Upload failed (${result.status})`);
-        }
-
-        setProgress({
-          phase: "process",
-          pct: 100,
-          label: "Uploaded — analysis complete",
-          detail: "done",
-        });
-        onAnalyzed(result.data);
+        const analysis = await uploadChunked(file, setProgress);
+        onAnalyzed(analysis);
         setProgress(null);
       } catch (err) {
         const message =

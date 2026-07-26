@@ -32,6 +32,9 @@ yarn-error.log*
 .env
 .env*.local
 
+# local demo upload / job data (DATA_DIR default)
+.data/
+
 # vercel
 .vercel
 

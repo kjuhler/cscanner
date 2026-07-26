@@ -1,14 +1,24 @@
 services:
-  cscanner:
+  redis:
+    image: redis:7-alpine
+    container_name: cscanner-redis
+    restart: unless-stopped
+    ports:
+      # Published for local `pnpm dev` / `pnpm dev:worker` (REDIS_URL=redis://127.0.0.1:6379)
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  web:
     # Built from this Git repo by Portainer (not pulled from Docker Hub).
     build:
       context: .
       dockerfile: Dockerfile
-    # Force rebuild from Dockerfile on deploy/update — required for Portainer Git stacks.
-    # Do NOT use Portainer "Re-pull image" — there is no Hub image named cscanner.
     pull_policy: build
     container_name: cscanner
     restart: unless-stopped
+    depends_on:
+      - redis
     ports:
       # Host 3003 — free on this host (3000–3002 already in use).
       - "3003:3000"
@@ -19,5 +29,32 @@ services:
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
       PORT: "3000"
-      # Demoparser + large demos need headroom; OOM kills show up as Cloudflare 502.
+      REDIS_URL: redis://redis:6379
+      DATA_DIR: /data
+    volumes:
+      - demo-data:/data
+    # Web stays light — demoparser runs on the worker.
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    pull_policy: build
+    container_name: cscanner-worker
+    restart: unless-stopped
+    depends_on:
+      - redis
+    environment:
+      NODE_ENV: production
+      REDIS_URL: redis://redis:6379
+      DATA_DIR: /data
+      ANALYZE_CONCURRENCY: ${ANALYZE_CONCURRENCY:-1}
+      # Demoparser + large demos need headroom; OOM kills show up as failed jobs.
       NODE_OPTIONS: "--max-old-space-size=4096"
+    volumes:
+      - demo-data:/data
+    command: ["node", "analyze-worker.cjs"]
+
+volumes:
+  demo-data:
+  redis-data:

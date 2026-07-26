@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { createAnalyzeJob } from "@/lib/demo/analyzeJob";
+import { enqueueAnalyzeJob } from "@/lib/demo/analyzeQueue";
 import { isDemoUploadName } from "@/lib/demo/decompress";
-import { startAnalyzeJobInBackground } from "@/lib/demo/startAnalyzeJob";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 600;
+export const maxDuration = 60;
 
-/** Start assemble → decompress → analyze as a background job; client polls for progress. */
+/** Enqueue assemble → decompress → analyze; worker picks up the job. */
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
@@ -38,9 +38,7 @@ export async function POST(request: Request) {
 
     const jobId = randomUUID();
     await createAnalyzeJob(jobId);
-
-    // Forked worker (prod) so demoparser does not block / crash the HTTP process.
-    startAnalyzeJobInBackground({
+    await enqueueAnalyzeJob({
       jobId,
       uploadId,
       fileName,

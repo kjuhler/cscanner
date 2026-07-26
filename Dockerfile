@@ -33,16 +33,19 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
+ENV DATA_DIR=/data
 ENV ANALYZE_WORKER_PATH=/app/analyze-worker.cjs
 
 RUN apk add --no-cache libc6-compat \
   && addgroup --system --gid 1001 nodejs \
-  && adduser --system --uid 1001 nextjs
+  && adduser --system --uid 1001 nextjs \
+  && mkdir -p /data \
+  && chown nextjs:nodejs /data
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-# Bundled analyze worker — runs demoparser off the HTTP process (avoids Cloudflare 502 while polling).
+# Bundled analyze worker (BullMQ consumer + demoparser).
 COPY --from=builder --chown=nextjs:nodejs /app/analyze-worker.cjs ./analyze-worker.cjs
 
 # Replace any traced @laihoe stubs with the full native package tree (musl).
@@ -52,4 +55,5 @@ COPY --from=builder --chown=nextjs:nodejs /app/laihoe-flat ./node_modules/@laiho
 
 USER nextjs
 EXPOSE 3000
+# Default CMD is the web process; compose overrides for worker.
 CMD ["node", "server.js"]
