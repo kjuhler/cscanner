@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 dependencies:
+  '@laihoe/demoparser2':
+    specifier: ^0.41.3
+    version: 0.41.3
   next:
     specifier: 16.2.11
     version: 16.2.11(@babel/core@7.29.7)(react-dom@19.2.4)(react@19.2.4)
@@ -14,6 +17,9 @@ dependencies:
   react-dom:
     specifier: 19.2.4
     version: 19.2.4(react@19.2.4)
+  unbzip2-stream:
+    specifier: ^1.4.3
+    version: 1.4.3
 
 devDependencies:
   '@tailwindcss/postcss':
@@ -28,6 +34,9 @@ devDependencies:
   '@types/react-dom':
     specifier: ^19.2.0
     version: 19.2.0(@types/react@19.2.0)
+  '@types/unbzip2-stream':
+    specifier: ^1.4.3
+    version: 1.4.3
   eslint:
     specifier: ^9.39.0
     version: 9.39.0
@@ -325,6 +334,7 @@ packages:
   /@img/colour@1.1.0:
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
     engines: {node: '>=18'}
+    requiresBuild: true
     dev: false
     optional: true
 
@@ -579,6 +589,112 @@ packages:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  /@laihoe/demoparser2-android-arm-eabi@0.41.3:
+    resolution: {integrity: sha512-pSF1BrhJdkZ7IqP/rA0L3DdafqRIxKKxAwlTzWriztxqtvNl6QL/2Zxpb4eLAZFiS0hOQ0NL9/qEB4BzteFvEQ==}
+    engines: {node: '>= 10'}
+    cpu: [arm]
+    os: [android]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@laihoe/demoparser2-android-arm64@0.41.3:
+    resolution: {integrity: sha512-6qcazTd9yxe9RmsX0hqEVgkDRoeNh58rJcSmTtwOL52dmluw9L9MHbf2KeEZ+XN8u6TMF6uIemYvUwrF9EJjHg==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [android]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@laihoe/demoparser2-darwin-arm64@0.41.3:
+    resolution: {integrity: sha512-nOUCqfPwUvmZxwF2TYJmUMsXUSnSU/I6zfNK6nEwzT+yUPXTvQIKZoa+vrTgOApDYfuEJbVc2T1Eg4mr6orC0A==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [darwin]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@laihoe/demoparser2-linux-arm-gnueabihf@0.41.3:
+    resolution: {integrity: sha512-cinTOS1l7B6WUJSZ4JtoB9TPVJ4ys1RVacYehCxvn8nttRHCGqAc1jpxHP1Po25i1y/9fS+XeeDOpKMaBHmfSQ==}
+    engines: {node: '>= 10'}
+    cpu: [arm]
+    os: [linux]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@laihoe/demoparser2-linux-arm64-gnu@0.41.3:
+    resolution: {integrity: sha512-wfrOosaZZ3kHTiE9RRQPKpgEWCXsVxpiiwkrtzKugteYrZqOgf6PimSZDHpBnU2Rem85uB6cb64Bfwn2TW/POg==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [linux]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@laihoe/demoparser2-linux-arm64-musl@0.41.3:
+    resolution: {integrity: sha512-8OfGSSikqt5eRJEpDN60En5+d1BKT+8XHZFAO1jtOK44smpadPZI/9UK/DPDrEFPV3St70vuOyhGnojht+zSAw==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [linux]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@laihoe/demoparser2-linux-x64-gnu@0.41.3:
+    resolution: {integrity: sha512-1H//sLH5xZx6cXM7irS2PCTd+h+wbf3xDBOs9naBWFyT0yHE5OtRGBS3fckQ62EowiM0qJDeoueHk+0MCacARg==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [linux]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@laihoe/demoparser2-linux-x64-musl@0.41.3:
+    resolution: {integrity: sha512-WYyJG8r25xD4YxP9PVhlC51LqSDYHMDmwBfF4YDlBEft0ifQSDjNLN0fJDeIdyyaKiKqfd2oOqTdJwWHV4JRqg==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [linux]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@laihoe/demoparser2-win32-arm64-msvc@0.41.3:
+    resolution: {integrity: sha512-zbuezU2UUEjvMkmnrS3cLd6ZODmixpG3i+QD1Wtk2jhyt0iv2G2+gkvn8wHg9yTASWFGe0Uu/EbpNZdSHWwIoQ==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [win32]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@laihoe/demoparser2-win32-x64-msvc@0.41.3:
+    resolution: {integrity: sha512-9HFpNy3rX0xDn+BXtThu5m/VRguI7gDf6twI1PONTEmJDKnYJdFaWBBAYdzSgHXrV2hnc8bw1yRh+YeTYXMTDg==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [win32]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@laihoe/demoparser2@0.41.3:
+    resolution: {integrity: sha512-xra7p7p4Kdgn2FIOfA70cO/idXtQxLY6Uz/AQbCgi1y6js5bDAtuvegju2d6wZIXJoX3xOyte/3Sv0VX/Pb1Nw==}
+    engines: {node: '>= 10'}
+    optionalDependencies:
+      '@laihoe/demoparser2-android-arm-eabi': 0.41.3
+      '@laihoe/demoparser2-android-arm64': 0.41.3
+      '@laihoe/demoparser2-darwin-arm64': 0.41.3
+      '@laihoe/demoparser2-linux-arm-gnueabihf': 0.41.3
+      '@laihoe/demoparser2-linux-arm64-gnu': 0.41.3
+      '@laihoe/demoparser2-linux-arm64-musl': 0.41.3
+      '@laihoe/demoparser2-linux-x64-gnu': 0.41.3
+      '@laihoe/demoparser2-linux-x64-musl': 0.41.3
+      '@laihoe/demoparser2-win32-arm64-msvc': 0.41.3
+      '@laihoe/demoparser2-win32-x64-msvc': 0.41.3
+    dev: false
 
   /@napi-rs/wasm-runtime@1.1.6(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0):
     resolution: {integrity: sha512-ZLv/JdUfkvOy9eCnnBaGfiO+XimbjebAeO+MRQqD/B+FR1tnRN0tpKSJHRbE8sFfS6aqsXZ67TQjfwfsxULVbg==}
@@ -903,6 +1019,18 @@ packages:
     resolution: {integrity: sha512-1LOH8xovvsKsCBq1wnT4ntDUdCJKmnEakhsuoUSy6ExlHCkGP2hqnatagYTgFk6oeL0VU31u7SNjunPN+GchtA==}
     dependencies:
       csstype: 3.2.3
+    dev: true
+
+  /@types/through@0.0.33:
+    resolution: {integrity: sha512-HsJ+z3QuETzP3cswwtzt2vEIiHBk/dCcHGhbmG5X3ecnwFD/lPrMpliGXxSCg03L9AhrdwA4Oz/qfspkDW+xGQ==}
+    dependencies:
+      '@types/node': 20.19.0
+    dev: true
+
+  /@types/unbzip2-stream@1.4.3:
+    resolution: {integrity: sha512-D8X5uuJRISqc8YtwL8jNW2FpPdUOCYXbfD6zNROCTbVXK9nawucxh10tVXE3MPjnHdRA1LvB0zDxVya/lBsnYw==}
+    dependencies:
+      '@types/through': 0.0.33
     dev: true
 
   /@typescript-eslint/eslint-plugin@8.65.0(@typescript-eslint/parser@8.65.0)(eslint@9.39.0)(typescript@5.9.2):
@@ -1390,6 +1518,10 @@ packages:
     engines: {node: 18 || 20 || >=22}
     dev: true
 
+  /base64-js@1.5.1:
+    resolution: {integrity: sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==}
+    dev: false
+
   /baseline-browser-mapping@2.11.1:
     resolution: {integrity: sha512-HYXq73DDpCtNzOmrFsm9eSwCvWCql0RzqjpDzXN9EadiLJ4DNat0nsZ/Bzmy+Ud12mb4/zKDY0cQ805ZzN+i0A==}
     engines: {node: '>=6.0.0'}
@@ -1426,6 +1558,13 @@ packages:
       electron-to-chromium: 1.5.396
       node-releases: 2.0.51
       update-browserslist-db: 1.2.3(browserslist@4.28.7)
+
+  /buffer@5.7.1:
+    resolution: {integrity: sha512-EHcyIPBQ4BSGlvjB16k5KgAJ27CIsHY/2JBmCRReo48y9rQ3MaUzWX3KVlBa4U7MyX02HdVj0K7C3WaB3ju7FQ==}
+    dependencies:
+      base64-js: 1.5.1
+      ieee754: 1.2.1
+    dev: false
 
   /call-bind-apply-helpers@1.0.2:
     resolution: {integrity: sha512-Sp1ablJ0ivDkSzjcaJdxEunN5/XvksFJ2sMBFfq6x0ryhQV/2b/KwFe21cMpmHtPOSij8K99/wSfoEuTObmuMQ==}
@@ -2307,6 +2446,10 @@ packages:
     dependencies:
       hermes-estree: 0.25.1
     dev: true
+
+  /ieee754@1.2.1:
+    resolution: {integrity: sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==}
+    dev: false
 
   /ignore@5.3.2:
     resolution: {integrity: sha512-hsBTNUqQTDwkWtcdYI2i06Y/nUBEsNEDJKjWdigLvegy8kDuJAS8uRlpkkcQpyEXL0Z/pjDy5HBmMjRCJ2gq+g==}
@@ -3444,6 +3587,10 @@ packages:
     engines: {node: '>=6'}
     dev: true
 
+  /through@2.3.8:
+    resolution: {integrity: sha512-w89qg7PI8wAdvX60bMDP+bFoD5Dvhm9oLheFp5O4a2QF0cSBGsBX4qZmadPMvVqlLJBBci+WqGGOAPvcDeNSVg==}
+    dev: false
+
   /tinyglobby@0.2.17:
     resolution: {integrity: sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==}
     engines: {node: '>=12.0.0'}
@@ -3564,6 +3711,13 @@ packages:
       has-symbols: 1.1.0
       which-boxed-primitive: 1.1.1
     dev: true
+
+  /unbzip2-stream@1.4.3:
+    resolution: {integrity: sha512-mlExGW4w71ebDJviH16lQLtZS32VKqsSfk80GCfUlwT/4/hNRFsoscrF/c++9xinkMzECL1uL9DDwXqFWkruPg==}
+    dependencies:
+      buffer: 5.7.1
+      through: 2.3.8
+    dev: false
 
   /undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
