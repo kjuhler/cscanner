@@ -7,6 +7,46 @@ type Props = {
   disabled?: boolean;
 };
 
+function uploadWithProgress(
+  file: File,
+  onProgress: (pct: number) => void,
+): Promise<{ ok: boolean; status: number; data: unknown }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/upload-demo");
+    xhr.timeout = 10 * 60 * 1000; // 10 min for large demos
+
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable || e.total <= 0) return;
+      onProgress(Math.min(99, Math.round((e.loaded / e.total) * 100)));
+    };
+    xhr.upload.onload = () => onProgress(100);
+
+    xhr.onerror = () =>
+      reject(new Error("Network error while uploading (proxy/timeout?)."));
+    xhr.ontimeout = () =>
+      reject(
+        new Error(
+          "Upload timed out after 10 minutes. Try a smaller demo or check reverse-proxy timeouts.",
+        ),
+      );
+
+    xhr.onload = () => {
+      let data: unknown = null;
+      try {
+        data = JSON.parse(xhr.responseText || "{}");
+      } catch {
+        data = { error: xhr.responseText || "Invalid server response." };
+      }
+      resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data });
+    };
+
+    const body = new FormData();
+    body.append("demo", file);
+    xhr.send(body);
+  });
+}
+
 export function DemoUploadForm({ onAnalyzed, disabled }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -30,22 +70,33 @@ export function DemoUploadForm({ onAnalyzed, disabled }: Props) {
         return;
       }
 
+      const sizeMb = file.size / (1024 * 1024);
       setLoading(true);
-      setProgress("Uploading demo…");
+      setProgress(
+        sizeMb >= 1
+          ? `Uploading demo (0% of ${sizeMb.toFixed(0)} MB)…`
+          : "Uploading demo…",
+      );
 
       try {
-        const body = new FormData();
-        body.append("demo", file);
+        const { ok: httpOk, status, data } = await uploadWithProgress(
+          file,
+          (pct) => {
+            if (pct < 100) {
+              setProgress(
+                `Uploading demo (${pct}% of ${sizeMb.toFixed(0)} MB)…`,
+              );
+            } else {
+              setProgress("Uploaded — parsing & analyzing on server…");
+            }
+          },
+        );
 
-        setProgress("Parsing & analyzing on server…");
-        const res = await fetch("/api/upload-demo", {
-          method: "POST",
-          body,
-        });
-
-        const data = (await res.json()) as { error?: string };
-        if (!res.ok) {
-          throw new Error(data.error || `Upload failed (${res.status})`);
+        const payload = data as { error?: string };
+        if (!httpOk) {
+          throw new Error(
+            payload.error || `Upload failed (${status || "unknown"})`,
+          );
         }
 
         onAnalyzed(data);

@@ -73,6 +73,26 @@ Repo includes `Dockerfile` + `docker-compose.yml` for a **Git repository** Porta
 
 6. Deploy the stack. Open `http://<host>:3003`.
 
+### Demo uploads behind a reverse proxy
+
+Large `.dem` / `.dem.bz2` files need high body + timeout limits on any proxy in front of Portainer (nginx / Traefik / Cloudflare).
+
+Example nginx:
+
+```nginx
+client_max_body_size 500m;
+proxy_read_timeout 600s;
+proxy_send_timeout 600s;
+proxy_request_buffering off;
+```
+
+Quick check that the parser loaded in the container:
+
+```bash
+curl -s http://<host>:3003/api/upload-demo
+# expect: {"ok":true,"demoparser":true}
+```
+
 ### Update after code pushes
 
 1. Open the stack → **Pull and redeploy** (or Editor → **Update the stack**).

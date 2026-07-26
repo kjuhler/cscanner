@@ -151,9 +151,9 @@ export function parseDemoFile(path: string): ParsedDemo {
   }
 
   const duration = estimateDuration(header, deaths, roundEnds);
-  // Denser samples for radar replay (~2–4k frames).
+  // ~1200 frames keeps replay smooth enough while staying faster on small hosts.
   let motionTicks: DemoEventRow[] = [];
-  const sampleTicks = buildSampleTicks(duration, 2800);
+  const sampleTicks = buildSampleTicks(duration, 1200);
   if (sampleTicks.length > 0) {
     try {
       motionTicks = asRows(
