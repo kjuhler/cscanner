@@ -25,8 +25,7 @@ RUN pnpm build \
   # Flatten @laihoe packages (pnpm symlinks → real files) for the runner image.
   # Avoids "cannot replace directory with file" when overlaying onto standalone.
   && mkdir -p /app/laihoe-flat \
-  && cp -aL /app/node_modules/@laihoe/. /app/laihoe-flat/ \
-  && test -f /app/analyze-worker.cjs
+  && cp -aL /app/node_modules/@laihoe/. /app/laihoe-flat/
 
 FROM node:22-alpine AS runner
 WORKDIR /app
@@ -34,6 +33,7 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
+ENV ANALYZE_WORKER_PATH=/app/analyze-worker.cjs
 
 RUN apk add --no-cache libc6-compat \
   && addgroup --system --gid 1001 nodejs \
