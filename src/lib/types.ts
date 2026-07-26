@@ -169,6 +169,38 @@ export type LeetifyRecentMatch = {
   hasBannedPlayer?: boolean;
 };
 
+export type LeetifyMatchPlayer = {
+  steamId: string;
+  name: string;
+  teamNumber: number;
+  kills: number;
+  deaths: number;
+  assists: number;
+  kd: number | null;
+  adr: number | null;
+  hsPercent: number | null;
+  leetifyRating: number | null;
+  ctRating: number | null;
+  tRating: number | null;
+  mvps: number;
+  preaim: number | null;
+  timeToDamageMs: number | null;
+  sprayAccuracy: number | null;
+  score: number;
+};
+
+export type LeetifyMatchDetails = {
+  id: string;
+  finishedAt: string | null;
+  source: string | null;
+  sourceMatchId: string | null;
+  map: string | null;
+  hasBannedPlayer: boolean;
+  replayUrl: string | null;
+  score: string | null;
+  players: LeetifyMatchPlayer[];
+};
+
 export type LeetifyMapStats = {
   map: string;
   matches: number;

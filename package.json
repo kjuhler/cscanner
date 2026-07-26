@@ -5,13 +5,18 @@
   "packageManager": "pnpm@8.15.9",
   "scripts": {
     "dev": "next dev",
+    "dev:redis": "node scripts/dev-redis.mjs",
+    "dev:worker": "pnpm build:analyze-worker && node analyze-worker.cjs",
     "build": "next build",
     "build:analyze-worker": "node scripts/build-analyze-worker.mjs",
     "start": "next start",
+    "start:worker": "node analyze-worker.cjs",
     "lint": "eslint"
   },
   "dependencies": {
     "@laihoe/demoparser2": "^0.41.3",
+    "bullmq": "^5.81.2",
+    "ioredis": "^5.11.1",
     "next": "16.2.11",
     "react": "19.2.4",
     "react-dom": "19.2.4",

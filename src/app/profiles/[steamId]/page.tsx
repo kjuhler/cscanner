@@ -232,7 +232,10 @@ export default async function ProfilePage({ params }: PageProps) {
           />
         </div>
 
-        <LeetifyMatchHistory matches={data.leetify?.recentMatches ?? []} />
+        <LeetifyMatchHistory
+          matches={data.leetify?.recentMatches ?? []}
+          steamId={steamId}
+        />
 
         <MatchHistory matches={faceit.matches} />
 

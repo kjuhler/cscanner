@@ -13,6 +13,7 @@ Look up a Steam ID or profile URL to review K/D, win rate, HS%, Premier, FACEIT 
 - FACEIT ELO, HS%, map breakdown, recent matches (API key)
 - Leetify Premier, competitive map ranks, time to DMG, aim ratings
 - Heuristic cheating risk % with signal breakdown
+- Demo upload → background analyze (radar / timeline / cheat signals)
 - Tracker sources hub: live vs link-only (CSStats, Scope.gg)
 - Outbound profiles: Leetify, CSStats, Scope.gg, FACEIT, Steam
 
@@ -35,27 +36,50 @@ cp .env.example .env.local
 | `STEAM_API_KEY` | [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey) |
 | `FACEIT_API_KEY` | [developers.faceit.com](https://developers.faceit.com/) |
 | `LEETIFY_API_KEY` | [leetify.com/app/developer](https://leetify.com/app/developer) (optional, higher rate limits) |
+| `REDIS_URL` | Local Redis — required for demo uploads (`redis://127.0.0.1:6379`) |
 
 Steam is required. FACEIT is optional. Leetify works without a key for registered players, but a key raises rate limits. Scope/CSStats are link-only.
 
-3. Run the dev server:
+3. Start Redis (required for demo uploads / worker):
+
+```bash
+pnpm run dev:redis
+```
+
+Uses Docker when available, otherwise `redis-server` on PATH
+(Windows: `winget install taizod1024.redis-windows-fork`). Redis must listen
+on `127.0.0.1:6379`.
+
+4. In two terminals:
 
 ```bash
 pnpm run dev
+pnpm run dev:worker
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
+
+Uploads land in `.data/` (override with `DATA_DIR`). Profile lookup works without Redis; demo analyze needs Redis + worker.
 
 ## Deploy (Portainer / GitHub)
 
 Repo includes `Dockerfile` + `docker-compose.yml` for a **Git repository** Portainer stack. The app image is **built on the host** from the repo — it is **not** on Docker Hub.
 
-**Host port:** `3003` → container `3000` (chosen because 3000–3002 are already used on the host).
+Stack services:
+
+| Service | Role |
+|---------|------|
+| `web` | Next.js — profiles + chunk upload + enqueue |
+| `worker` | BullMQ consumer — demoparser / analyze |
+| `redis` | Job queue + live job status |
+
+**Host port:** `3003` → web container `3000` (chosen because 3000–3002 are already used on the host).
 
 ### Requirements
 
 - Portainer on **Docker Standalone** (not Swarm — Swarm cannot `build:` from compose)
 - Enable **relative path** / Git build support if Portainer asks (needed so `build.context: .` can see the Dockerfile)
+- Give the **worker** enough RAM (4 GB+ recommended)
 
 ### Create the stack
 
@@ -70,18 +94,18 @@ Repo includes `Dockerfile` + `docker-compose.yml` for a **Git repository** Porta
 | `STEAM_API_KEY` | your Steam Web API key |
 | `FACEIT_API_KEY` | optional |
 | `LEETIFY_API_KEY` | optional |
+| `ANALYZE_CONCURRENCY` | optional, default `1` |
 
 6. Deploy the stack. Open `http://<host>:3003`.
 
 ### Demo uploads behind a reverse proxy
 
 Uploads use **512 KB chunks** by default (6 in parallel) so they work even when
-nginx keeps `client_max_body_size 1m` (a single large POST stalls around ~1%).
+nginx keeps `client_max_body_size 1m`.
 
-The UI shows upload **MB/s + ETA**, then **live stages** while a **forked worker**
-(`analyze-worker.cjs`) assembles, decompresses, parses, and analyzes so the HTTP
-process stays up (avoids Cloudflare 502 on job polls). Give the container enough
-RAM (4 GB+ recommended).
+The UI shows upload **MB/s + ETA**, then **live stages** while the **worker**
+assembles, decompresses, parses, and analyzes. Job state lives in Redis; demo
+blobs live on the shared `demo-data` volume (`DATA_DIR=/data`).
 
 After changing analyze/parse code, regenerate the worker before commit/deploy:
 
@@ -104,11 +128,11 @@ proxy_request_buffering off;
 NEXT_PUBLIC_UPLOAD_CHUNK_KB=4096
 ```
 
-Quick check that the parser loaded in the container:
+Quick health check (Redis + queue — demoparser runs on the worker):
 
 ```bash
 curl -s http://<host>:3003/api/upload-demo
-# expect: {"ok":true,"demoparser":true}
+# expect: {"ok":true,"redis":true,"queue":{...}}
 ```
 
 **Note:** Chrome “Content Security Policy … blocks eval” is usually from the
@@ -133,8 +157,9 @@ App: [http://localhost:3003](http://localhost:3003).
 
 ## Stack
 
-- Next.js (App Router) + TypeScript
-- Tailwind CSS
+- Next.js (App Router) + TypeScript + Tailwind CSS
+- Redis + BullMQ analyze queue
+- Dedicated analyze worker (`analyze-worker.cjs`)
 - Server-side fetches only (API keys never exposed to the browser)
 
 ## Notes

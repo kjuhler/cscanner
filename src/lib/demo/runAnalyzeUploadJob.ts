@@ -2,14 +2,13 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { unlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { analyzeDemo } from "@/lib/demo";
 import {
-  createAnalyzeJob,
   updateAnalyzeJob,
   writeAnalyzeJobResult,
 } from "@/lib/demo/analyzeJob";
+import { demosRoot } from "@/lib/demo/dataDir";
 import {
   isBzip2DemoName,
   writeDemoTempFile,
@@ -55,7 +54,7 @@ export async function runAnalyzeUploadJob(opts: {
       pct: 2,
     });
 
-    tempPath = join(tmpdir(), `cscanner-demo-${randomUUID()}.dem`);
+    tempPath = join(demosRoot(), `demo-${jobId}-${randomUUID()}.dem`);
 
     if (isBzip2DemoName(fileName)) {
       const buffer = await assembleUploadChunks(uploadId, totalChunks);
@@ -132,5 +131,3 @@ export async function runAnalyzeUploadJob(opts: {
     }
   }
 }
-
-export { createAnalyzeJob };
