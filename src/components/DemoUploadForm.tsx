@@ -183,6 +183,8 @@ async function pollJob(
 ): Promise<unknown> {
   let transientFailures = 0;
   const maxTransient = 20;
+  const startedAt = Date.now();
+  const queuedTooLongMs = 60_000;
 
   for (;;) {
     let res: Response;
@@ -256,6 +258,16 @@ async function pollJob(
         throw new Error("Analyze finished without a result.");
       }
       return data.result;
+    }
+
+    // Stuck in "queued" = web enqueued, but worker never picked the job up.
+    if (
+      (data.stage === "queued" || !data.stage) &&
+      Date.now() - startedAt > queuedTooLongMs
+    ) {
+      throw new Error(
+        "Analyze worker is not picking up the job (still Queued). In Portainer check that the cscanner-worker container is running, then open its logs. Health: GET /api/upload-demo should show workerAlive:true.",
+      );
     }
 
     await new Promise((r) => setTimeout(r, POLL_MS));

@@ -47750,6 +47750,7 @@ async function runAnalyzeUploadJob(opts) {
 }
 
 // src/lib/demo/workerEntry.ts
+var WORKER_HEARTBEAT_KEY = "analyze:worker:heartbeat";
 function redisUrl() {
   return process.env.REDIS_URL?.trim() || "redis://127.0.0.1:6379";
 }
@@ -47757,6 +47758,12 @@ function concurrency() {
   const raw = process.env.ANALYZE_CONCURRENCY;
   const n = raw != null && raw !== "" ? Number(raw) : 1;
   return Number.isInteger(n) && n > 0 ? n : 1;
+}
+function createConnection(url) {
+  return new import_ioredis2.default(url, {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: true
+  });
 }
 async function waitForRedis(url) {
   const client = new import_ioredis2.default(url, {
@@ -47774,7 +47781,7 @@ async function waitForRedis(url) {
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     throw new Error(
-      `Redis unreachable at ${url} (${detail}). Start it with: docker compose up redis -d`
+      `Redis unreachable at ${url} (${detail}). Start it with: pnpm run dev:redis`
     );
   } finally {
     try {
@@ -47784,7 +47791,40 @@ async function waitForRedis(url) {
     }
   }
 }
-async function main() {
+async function runOnce(args) {
+  const [jobId, uploadId, fileName, totalChunksStr] = args;
+  if (!jobId || !uploadId || !fileName || !totalChunksStr) {
+    console.error(
+      "Usage: analyze-worker --once <jobId> <uploadId> <fileName> <totalChunks>"
+    );
+    process.exit(2);
+  }
+  const totalChunks = Number(totalChunksStr);
+  if (!Number.isInteger(totalChunks) || totalChunks <= 0) {
+    console.error("Invalid totalChunks");
+    process.exit(2);
+  }
+  const url = redisUrl();
+  try {
+    await waitForRedis(url);
+  } catch (err) {
+    console.warn(
+      "[analyze-worker] redis check failed (status updates may fail):",
+      err instanceof Error ? err.message : err
+    );
+  }
+  console.info(
+    `[analyze-worker] once job=${jobId} upload=${uploadId} file=${fileName} chunks=${totalChunks}`
+  );
+  await createAnalyzeJob(jobId);
+  await runAnalyzeUploadJob({
+    jobId,
+    uploadId,
+    fileName,
+    totalChunks
+  });
+}
+async function runDaemon() {
   const url = redisUrl();
   const conc = concurrency();
   console.info(
@@ -47792,6 +47832,19 @@ async function main() {
   );
   await waitForRedis(url);
   console.info(`[analyze-worker] redis ok`);
+  const heartbeat = createConnection(url);
+  const beat = async () => {
+    try {
+      await heartbeat.set(WORKER_HEARTBEAT_KEY, String(Date.now()), "EX", 60);
+    } catch (err) {
+      console.error(
+        "[analyze-worker] heartbeat failed",
+        err instanceof Error ? err.message : err
+      );
+    }
+  };
+  await beat();
+  const beatTimer = setInterval(() => void beat(), 15e3);
   let lastErrorLog = 0;
   const worker = new import_bullmq.Worker(
     ANALYZE_QUEUE_NAME,
@@ -47809,10 +47862,16 @@ async function main() {
       });
     },
     {
-      connection: { url, maxRetriesPerRequest: null },
+      connection: createConnection(url),
       concurrency: conc
     }
   );
+  worker.on("ready", () => {
+    console.info("[analyze-worker] ready \u2014 waiting for jobs");
+  });
+  worker.on("active", (job) => {
+    console.info(`[analyze-worker] active job=${job.id}`);
+  });
   worker.on("failed", (job, err) => {
     const jobId = job?.data?.jobId ?? job?.id ?? "unknown";
     console.error(`[analyze-worker] failed job=${jobId}`, err);
@@ -47834,11 +47893,27 @@ async function main() {
   });
   const shutdown = async (signal) => {
     console.info(`[analyze-worker] ${signal} \u2014 closing\u2026`);
+    clearInterval(beatTimer);
+    try {
+      await heartbeat.del(WORKER_HEARTBEAT_KEY);
+      await heartbeat.quit();
+    } catch {
+    }
     await worker.close();
     process.exit(0);
   };
   process.on("SIGINT", () => void shutdown("SIGINT"));
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
+}
+async function main() {
+  const argv = process.argv.slice(2);
+  if (argv[0] === "--once") {
+    await runOnce(argv.slice(1));
+    console.info("[analyze-worker] once exit 0");
+    process.exit(0);
+    return;
+  }
+  await runDaemon();
 }
 main().catch((err) => {
   console.error(

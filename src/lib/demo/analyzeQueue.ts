@@ -1,21 +1,24 @@
 import "server-only";
 
 import { Queue } from "bullmq";
+import { createBullmqConnection } from "./bullmqConnection";
 import {
   ANALYZE_QUEUE_NAME,
   type AnalyzeQueuePayload,
 } from "./analyzeQueueTypes";
-import { getRedisUrl } from "./redis";
+import { getRedis } from "./redis";
 
 export { ANALYZE_QUEUE_NAME } from "./analyzeQueueTypes";
 export type { AnalyzeQueuePayload } from "./analyzeQueueTypes";
+
+export const WORKER_HEARTBEAT_KEY = "analyze:worker:heartbeat";
 
 let queue: Queue<AnalyzeQueuePayload> | null = null;
 
 export function getAnalyzeQueue(): Queue<AnalyzeQueuePayload> {
   if (queue) return queue;
   queue = new Queue<AnalyzeQueuePayload>(ANALYZE_QUEUE_NAME, {
-    connection: { url: getRedisUrl(), maxRetriesPerRequest: null },
+    connection: createBullmqConnection(),
     defaultJobOptions: {
       removeOnComplete: { age: 3600, count: 100 },
       removeOnFail: { age: 3600, count: 200 },
@@ -56,5 +59,18 @@ export async function getAnalyzeQueueCounts(): Promise<{
     };
   } catch {
     return null;
+  }
+}
+
+/** True if a worker wrote a heartbeat within the last ~45s. */
+export async function isAnalyzeWorkerAlive(): Promise<boolean> {
+  try {
+    const raw = await getRedis().get(WORKER_HEARTBEAT_KEY);
+    if (!raw) return false;
+    const ts = Number(raw);
+    if (!Number.isFinite(ts)) return false;
+    return Date.now() - ts < 45_000;
+  } catch {
+    return false;
   }
 }
