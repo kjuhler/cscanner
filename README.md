@@ -75,10 +75,7 @@ Repo includes `Dockerfile` + `docker-compose.yml` for a **Git repository** Porta
 
 ### Demo uploads behind a reverse proxy
 
-Uploads are **chunked (~512 KB each)** so they work even when nginx keeps the
-default `client_max_body_size 1m` (a single large POST often stalls around ~1%).
-
-Still recommended for fewer round-trips and long parses:
+**Fastest path:** one POST of the whole demo. Set on nginx (or equivalent):
 
 ```nginx
 client_max_body_size 500m;
@@ -86,6 +83,10 @@ proxy_read_timeout 600s;
 proxy_send_timeout 600s;
 proxy_request_buffering off;
 ```
+
+Without that, large uploads often stall around ~1% (nginx default is **1m**).
+
+The app tries a **single upload** first, then automatically falls back to **2 MB chunks** if the proxy rejects/stalls the big request.
 
 Quick check that the parser loaded in the container:
 

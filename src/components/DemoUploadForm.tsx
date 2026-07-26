@@ -1,18 +1,59 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { CHUNK_BYTES } from "@/lib/demo/uploadLimits";
 
 type Props = {
   onAnalyzed: (data: unknown) => void;
   disabled?: boolean;
 };
 
+/** Prefer one request; only used if the proxy rejects large bodies. */
+const FALLBACK_CHUNK_BYTES = 2 * 1024 * 1024; // 2 MB
+const FALLBACK_PARALLEL = 4;
+const SINGLE_TIMEOUT_MS = 10 * 60 * 1000;
+
 function newUploadId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
   }
   return `up_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function uploadSingle(
+  file: File,
+  onProgress: (pct: number) => void,
+): Promise<{ ok: boolean; status: number; data: unknown }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/upload-demo");
+    xhr.timeout = SINGLE_TIMEOUT_MS;
+
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable || e.total <= 0) return;
+      onProgress(Math.min(99, Math.round((e.loaded / e.total) * 100)));
+    };
+    xhr.upload.onload = () => onProgress(100);
+
+    xhr.onerror = () => reject(new Error("network"));
+    xhr.ontimeout = () => reject(new Error("timeout"));
+    xhr.onload = () => {
+      let data: unknown = {};
+      try {
+        data = JSON.parse(xhr.responseText || "{}");
+      } catch {
+        data = { error: xhr.responseText || "Invalid server response." };
+      }
+      resolve({
+        ok: xhr.status >= 200 && xhr.status < 300,
+        status: xhr.status,
+        data,
+      });
+    };
+
+    const body = new FormData();
+    body.append("demo", file);
+    xhr.send(body);
+  });
 }
 
 async function postChunk(
@@ -33,7 +74,9 @@ async function postChunk(
   });
   const data = (await res.json().catch(() => ({}))) as { error?: string };
   if (!res.ok) {
-    throw new Error(data.error || `Chunk ${index + 1}/${total} failed (${res.status})`);
+    throw new Error(
+      data.error || `Chunk ${index + 1}/${total} failed (${res.status})`,
+    );
   }
 }
 
@@ -52,6 +95,56 @@ async function completeUpload(
     throw new Error(data.error || `Analyze failed (${res.status})`);
   }
   return data;
+}
+
+function shouldFallbackToChunks(err: unknown, status?: number): boolean {
+  if (status === 413 || status === 502 || status === 504) return true;
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  return /network|timeout|413|proxy|fail|stalled/i.test(msg);
+}
+
+async function uploadChunked(
+  file: File,
+  onProgress: (label: string) => void,
+): Promise<unknown> {
+  const sizeMb = file.size / (1024 * 1024);
+  const totalChunks = Math.max(1, Math.ceil(file.size / FALLBACK_CHUNK_BYTES));
+  const uploadId = newUploadId();
+  let next = 0;
+  let done = 0;
+
+  onProgress(
+    `Proxy blocked large upload — retrying in ${totalChunks} × 2MB chunks (0%)…`,
+  );
+
+  async function worker() {
+    while (next < totalChunks) {
+      const i = next;
+      next += 1;
+      const start = i * FALLBACK_CHUNK_BYTES;
+      const end = Math.min(file.size, start + FALLBACK_CHUNK_BYTES);
+      await postChunk(
+        uploadId,
+        i,
+        totalChunks,
+        file.slice(start, end),
+      );
+      done += 1;
+      const pct = Math.round((done / totalChunks) * 100);
+      onProgress(
+        `Chunked upload ${pct}% (${done}/${totalChunks} · ${sizeMb.toFixed(0)} MB)…`,
+      );
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(FALLBACK_PARALLEL, totalChunks) }, () =>
+      worker(),
+    ),
+  );
+
+  onProgress("Uploaded — parsing & analyzing on server (can take 1–3 min)…");
+  return completeUpload(uploadId, file.name, totalChunks);
 }
 
 export function DemoUploadForm({ onAnalyzed, disabled }: Props) {
@@ -78,38 +171,53 @@ export function DemoUploadForm({ onAnalyzed, disabled }: Props) {
       }
 
       const sizeMb = file.size / (1024 * 1024);
-      const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_BYTES));
-      const uploadId = newUploadId();
-
       setLoading(true);
       setProgress(
-        `Uploading in ${totalChunks} chunks (0% of ${sizeMb.toFixed(0)} MB)…`,
+        sizeMb >= 1
+          ? `Uploading demo (0% of ${sizeMb.toFixed(0)} MB)…`
+          : "Uploading demo…",
       );
 
       try {
-        for (let i = 0; i < totalChunks; i++) {
-          const start = i * CHUNK_BYTES;
-          const end = Math.min(file.size, start + CHUNK_BYTES);
-          const blob = file.slice(start, end);
-          await postChunk(uploadId, i, totalChunks, blob);
+        // Fast path: one request (best when proxy allows large bodies).
+        try {
+          const result = await uploadSingle(file, (pct) => {
+            if (pct < 100) {
+              setProgress(
+                `Uploading demo (${pct}% of ${sizeMb.toFixed(0)} MB)…`,
+              );
+            } else {
+              setProgress(
+                "Uploaded — parsing & analyzing on server (can take 1–3 min)…",
+              );
+            }
+          });
 
-          const pct = Math.round(((i + 1) / totalChunks) * 100);
-          setProgress(
-            `Uploading in chunks (${pct}% · ${i + 1}/${totalChunks} · ${sizeMb.toFixed(0)} MB)…`,
-          );
+          if (result.ok) {
+            onAnalyzed(result.data);
+            setProgress(null);
+            return;
+          }
+
+          const payload = result.data as { error?: string };
+          if (!shouldFallbackToChunks(null, result.status)) {
+            throw new Error(
+              payload.error || `Upload failed (${result.status})`,
+            );
+          }
+        } catch (err) {
+          if (!shouldFallbackToChunks(err)) throw err;
         }
 
-        setProgress("Uploaded — parsing & analyzing on server…");
-        const analysis = await completeUpload(uploadId, file.name, totalChunks);
+        // Reliable fallback behind strict proxies (nginx 1m default, etc.).
+        const analysis = await uploadChunked(file, setProgress);
         onAnalyzed(analysis);
         setProgress(null);
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Upload failed.";
         setError(
-          /fail|network|413|proxy|timeout/i.test(message)
-            ? `${message} If this keeps happening behind nginx, set client_max_body_size 500m;`
-            : message,
+          `${message} Tip: set nginx client_max_body_size 500m for the fastest path.`,
         );
         setProgress(null);
       } finally {
@@ -172,7 +280,7 @@ export function DemoUploadForm({ onAnalyzed, disabled }: Props) {
           Drag &amp; drop a{" "}
           <span className="text-[var(--foreground)]">.dem</span> or{" "}
           <span className="text-[var(--foreground)]">.dem.bz2</span> file here,
-          or click to browse. Large files upload in small chunks (proxy-safe).
+          or click to browse.
         </p>
         {fileName ? (
           <p className="mt-4 font-[family-name:var(--font-code)] text-xs text-[var(--foreground)]">

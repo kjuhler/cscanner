@@ -5,11 +5,13 @@ import { join } from "node:path";
 import { NextResponse } from "next/server";
 import { analyzeDemo } from "@/lib/demo";
 import {
+  isBzip2DemoName,
   isDemoUploadName,
   writeDemoTempFile,
 } from "@/lib/demo/decompress";
 import {
   assembleUploadChunks,
+  assembleUploadChunksToFile,
   cleanupUploadSession,
 } from "@/lib/demo/uploadSession";
 
@@ -66,9 +68,30 @@ export async function POST(request: Request) {
     console.info(
       `[upload-demo/complete] assembling ${totalChunks} chunks for ${fileName}`,
     );
-    const buffer = await assembleUploadChunks(uploadId, totalChunks);
+
     tempPath = join(tmpdir(), `cscanner-demo-${randomUUID()}.dem`);
-    await writeDemoTempFile(buffer, tempPath, fileName);
+
+    if (isBzip2DemoName(fileName)) {
+      // Need the full buffer for bzip2 stream helper.
+      const buffer = await assembleUploadChunks(uploadId, totalChunks);
+      console.info(
+        `[upload-demo/complete] assembled ${(buffer.length / 1024 / 1024).toFixed(1)} MB, decompressing… (+${Date.now() - started}ms)`,
+      );
+      await writeDemoTempFile(buffer, tempPath, fileName);
+    } else {
+      const bytes = await assembleUploadChunksToFile(
+        uploadId,
+        totalChunks,
+        tempPath,
+      );
+      console.info(
+        `[upload-demo/complete] assembled ${(bytes / 1024 / 1024).toFixed(1)} MB… (+${Date.now() - started}ms)`,
+      );
+    }
+
+    // Free chunk files before the heavy parse.
+    await cleanupUploadSession(uploadId);
+    uploadId = "";
 
     console.info(
       `[upload-demo/complete] analyzing… (+${Date.now() - started}ms)`,
