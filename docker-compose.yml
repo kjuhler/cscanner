@@ -3,7 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    # Local-only image name — do not pull from Docker Hub.
     image: cscanner:latest
+    pull_policy: build
     container_name: cscanner
     restart: unless-stopped
     ports:
