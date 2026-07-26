@@ -38,3 +38,51 @@ body {
   background: rgba(232, 168, 56, 0.35);
   color: var(--foreground);
 }
+
+@keyframes nade-flash-pop {
+  0% {
+    transform: scale(0.35);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes nade-smoke-drift {
+  0%,
+  100% {
+    transform: scale(1) translate(0, 0);
+  }
+  50% {
+    transform: scale(1.06) translate(1px, -1px);
+  }
+}
+
+@keyframes nade-fire-flicker {
+  0%,
+  100% {
+    transform: scaleY(1) scaleX(1);
+    filter: brightness(1);
+  }
+  40% {
+    transform: scaleY(1.08) scaleX(0.96);
+    filter: brightness(1.15);
+  }
+  70% {
+    transform: scaleY(0.94) scaleX(1.04);
+    filter: brightness(0.92);
+  }
+}
+
+@keyframes nade-ember {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(-10px) scale(0.4);
+    opacity: 0;
+  }
+}

@@ -72,14 +72,29 @@ function normalizeKey(raw: string): string {
     .trim()
     .toLowerCase()
     .replace(/\.bsp$/i, "")
+    .replace(/\.vpk$/i, "")
+    .replace(/\\/g, "/")
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-/** Resolve a FACEIT/Leetify/Steam map label to Valve map code (e.g. de_mirage). */
+/** Pull Valve map code out of messy demo header strings (paths, workshop, etc.). */
+function extractValveCode(raw: string): string | null {
+  const m = raw
+    .toLowerCase()
+    .replace(/\\/g, "/")
+    .match(/\b((?:de|cs|ar|gd)_[a-z0-9]+)\b/);
+  return m?.[1] ?? null;
+}
+
+/** Resolve a FACEIT/Leetify/Steam/demo map label to Valve map code (e.g. de_mirage). */
 export function mapCode(name: string | null | undefined): string | null {
   if (!name) return null;
+
+  const extracted = extractValveCode(name);
+  if (extracted) return extracted;
+
   const key = normalizeKey(name);
   if (!key || key === "unknown" || key === "unknown map") return null;
 
@@ -87,9 +102,18 @@ export function mapCode(name: string | null | undefined): string | null {
   if (MAP_CODES[key]) return MAP_CODES[key];
   if (MAP_CODES[compact]) return MAP_CODES[compact];
 
+  // "de mirage" → try as de_mirage
+  const underscored = key.replace(/\s+/g, "_");
+  if (/^(de|cs|ar|gd)_/.test(underscored)) return underscored;
+
   if (/^(de|cs|ar|gd)_/.test(compact)) return compact;
   if (MAP_CODES[compact.replace(/^(de|cs)/, "")]) {
     return MAP_CODES[compact.replace(/^(de|cs)/, "")];
+  }
+
+  // Bare name like "mirage"
+  if (MAP_CODES[key] || MAP_CODES[compact]) {
+    return MAP_CODES[key] ?? MAP_CODES[compact]!;
   }
 
   return `de_${compact}`;

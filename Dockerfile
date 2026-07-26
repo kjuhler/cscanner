@@ -33,6 +33,9 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# Ensure demoparser2 native bindings are available in standalone (Alpine = musl).
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@laihoe ./node_modules/@laihoe
+
 USER nextjs
 EXPOSE 3000
 CMD ["node", "server.js"]
