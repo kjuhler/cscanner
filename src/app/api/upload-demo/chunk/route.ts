@@ -11,7 +11,8 @@ export const maxDuration = 120;
 
 /**
  * Receive one small chunk of a demo upload.
- * Chunks are kept under ~512KB so nginx/Cloudflare 1MB defaults still work.
+ * Default chunks stay under ~512KB so nginx/Cloudflare 1MB defaults still work.
+ * Override with NEXT_PUBLIC_UPLOAD_CHUNK_KB after raising the proxy body limit.
  */
 export async function POST(request: Request) {
   try {

@@ -2,7 +2,7 @@ import { analyzeCheating } from "./cheating";
 import { buildReplay } from "./buildReplay";
 import { analyzeEconomy } from "./economy";
 import { analyzeOpeningAndTrades } from "./opening";
-import { parseDemoFile } from "./parse";
+import { parseDemoFile, type ParseProgressFn } from "./parse";
 import { computePlayerStats, countRounds } from "./stats";
 import type {
   DemoAnalysis,
@@ -13,6 +13,12 @@ import type {
 } from "./types";
 import { analyzeUtility } from "./utility";
 import { mapCode } from "@/lib/maps";
+
+export type AnalyzeProgressFn = (
+  stage: "parsing" | "analyzing" | "replay",
+  detail: string,
+  pct: number,
+) => void;
 
 function mapNameFromHeader(header: Record<string, unknown>): string {
   const candidates = [
@@ -94,21 +100,38 @@ function buildSummary(
 
 /**
  * Full demo analysis pipeline: parse → stats → heuristics → replay.
+ * Progress pct is absolute within the post-upload pipeline (≈15–100).
  */
-export function analyzeDemo(path: string): DemoAnalysis {
-  const demo = parseDemoFile(path);
+export function analyzeDemo(
+  path: string,
+  onProgress?: AnalyzeProgressFn,
+): DemoAnalysis {
+  const report = onProgress ?? (() => {});
+  const parseProgress: ParseProgressFn = (detail, pct) => {
+    report("parsing", detail, pct);
+  };
+
+  const demo = parseDemoFile(path, parseProgress);
   const rounds = countRounds(demo);
   const tickRate = tickRateFromHeader(demo.header);
   const rawMapName = mapNameFromHeader(demo.header);
   const mapName = mapCode(rawMapName) ?? rawMapName;
 
+  report("analyzing", "Computing player stats…", 76);
   let players = computePlayerStats(demo, rounds);
 
+  report("analyzing", "Checking economy…", 78);
   const economyMistakes = analyzeEconomy(demo);
+
+  report("analyzing", "Checking openings & trades…", 82);
   const { mistakes: openingMistakes, players: withTrades } =
     analyzeOpeningAndTrades(demo, players, tickRate);
   players = withTrades;
+
+  report("analyzing", "Checking utility…", 85);
   const utilityMistakes = analyzeUtility(demo);
+
+  report("analyzing", "Running cheat heuristics…", 88);
   const { mistakes: cheatMistakes, cheatScores } = analyzeCheating(
     demo,
     players,
@@ -134,7 +157,9 @@ export function analyzeDemo(path: string): DemoAnalysis {
     scoreT: null,
   };
 
+  report("replay", "Building radar replay…", 92);
   const replay = buildReplay(demo, players, mapName, tickRate);
+  report("replay", "Almost done…", 98);
 
   return {
     match,
