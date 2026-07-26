@@ -1,50 +1,57 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { CHUNK_BYTES } from "@/lib/demo/uploadLimits";
 
 type Props = {
   onAnalyzed: (data: unknown) => void;
   disabled?: boolean;
 };
 
-function uploadWithProgress(
-  file: File,
-  onProgress: (pct: number) => void,
-): Promise<{ ok: boolean; status: number; data: unknown }> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/upload-demo");
-    xhr.timeout = 10 * 60 * 1000; // 10 min for large demos
+function newUploadId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `up_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
 
-    xhr.upload.onprogress = (e) => {
-      if (!e.lengthComputable || e.total <= 0) return;
-      onProgress(Math.min(99, Math.round((e.loaded / e.total) * 100)));
-    };
-    xhr.upload.onload = () => onProgress(100);
+async function postChunk(
+  uploadId: string,
+  index: number,
+  total: number,
+  blob: Blob,
+): Promise<void> {
+  const body = new FormData();
+  body.append("uploadId", uploadId);
+  body.append("index", String(index));
+  body.append("total", String(total));
+  body.append("chunk", blob, `part-${index}`);
 
-    xhr.onerror = () =>
-      reject(new Error("Network error while uploading (proxy/timeout?)."));
-    xhr.ontimeout = () =>
-      reject(
-        new Error(
-          "Upload timed out after 10 minutes. Try a smaller demo or check reverse-proxy timeouts.",
-        ),
-      );
-
-    xhr.onload = () => {
-      let data: unknown = null;
-      try {
-        data = JSON.parse(xhr.responseText || "{}");
-      } catch {
-        data = { error: xhr.responseText || "Invalid server response." };
-      }
-      resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data });
-    };
-
-    const body = new FormData();
-    body.append("demo", file);
-    xhr.send(body);
+  const res = await fetch("/api/upload-demo/chunk", {
+    method: "POST",
+    body,
   });
+  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  if (!res.ok) {
+    throw new Error(data.error || `Chunk ${index + 1}/${total} failed (${res.status})`);
+  }
+}
+
+async function completeUpload(
+  uploadId: string,
+  fileName: string,
+  totalChunks: number,
+): Promise<unknown> {
+  const res = await fetch("/api/upload-demo/complete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ uploadId, fileName, totalChunks }),
+  });
+  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  if (!res.ok) {
+    throw new Error(data.error || `Analyze failed (${res.status})`);
+  }
+  return data;
 }
 
 export function DemoUploadForm({ onAnalyzed, disabled }: Props) {
@@ -71,38 +78,39 @@ export function DemoUploadForm({ onAnalyzed, disabled }: Props) {
       }
 
       const sizeMb = file.size / (1024 * 1024);
+      const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_BYTES));
+      const uploadId = newUploadId();
+
       setLoading(true);
       setProgress(
-        sizeMb >= 1
-          ? `Uploading demo (0% of ${sizeMb.toFixed(0)} MB)…`
-          : "Uploading demo…",
+        `Uploading in ${totalChunks} chunks (0% of ${sizeMb.toFixed(0)} MB)…`,
       );
 
       try {
-        const { ok: httpOk, status, data } = await uploadWithProgress(
-          file,
-          (pct) => {
-            if (pct < 100) {
-              setProgress(
-                `Uploading demo (${pct}% of ${sizeMb.toFixed(0)} MB)…`,
-              );
-            } else {
-              setProgress("Uploaded — parsing & analyzing on server…");
-            }
-          },
-        );
+        for (let i = 0; i < totalChunks; i++) {
+          const start = i * CHUNK_BYTES;
+          const end = Math.min(file.size, start + CHUNK_BYTES);
+          const blob = file.slice(start, end);
+          await postChunk(uploadId, i, totalChunks, blob);
 
-        const payload = data as { error?: string };
-        if (!httpOk) {
-          throw new Error(
-            payload.error || `Upload failed (${status || "unknown"})`,
+          const pct = Math.round(((i + 1) / totalChunks) * 100);
+          setProgress(
+            `Uploading in chunks (${pct}% · ${i + 1}/${totalChunks} · ${sizeMb.toFixed(0)} MB)…`,
           );
         }
 
-        onAnalyzed(data);
+        setProgress("Uploaded — parsing & analyzing on server…");
+        const analysis = await completeUpload(uploadId, file.name, totalChunks);
+        onAnalyzed(analysis);
         setProgress(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Upload failed.");
+        const message =
+          err instanceof Error ? err.message : "Upload failed.";
+        setError(
+          /fail|network|413|proxy|timeout/i.test(message)
+            ? `${message} If this keeps happening behind nginx, set client_max_body_size 500m;`
+            : message,
+        );
         setProgress(null);
       } finally {
         setLoading(false);
@@ -164,7 +172,7 @@ export function DemoUploadForm({ onAnalyzed, disabled }: Props) {
           Drag &amp; drop a{" "}
           <span className="text-[var(--foreground)]">.dem</span> or{" "}
           <span className="text-[var(--foreground)]">.dem.bz2</span> file here,
-          or click to browse.
+          or click to browse. Large files upload in small chunks (proxy-safe).
         </p>
         {fileName ? (
           <p className="mt-4 font-[family-name:var(--font-code)] text-xs text-[var(--foreground)]">

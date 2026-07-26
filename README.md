@@ -75,9 +75,10 @@ Repo includes `Dockerfile` + `docker-compose.yml` for a **Git repository** Porta
 
 ### Demo uploads behind a reverse proxy
 
-Large `.dem` / `.dem.bz2` files need high body + timeout limits on any proxy in front of Portainer (nginx / Traefik / Cloudflare).
+Uploads are **chunked (~512 KB each)** so they work even when nginx keeps the
+default `client_max_body_size 1m` (a single large POST often stalls around ~1%).
 
-Example nginx:
+Still recommended for fewer round-trips and long parses:
 
 ```nginx
 client_max_body_size 500m;
@@ -92,6 +93,9 @@ Quick check that the parser loaded in the container:
 curl -s http://<host>:3003/api/upload-demo
 # expect: {"ok":true,"demoparser":true}
 ```
+
+**Note:** Chrome “Content Security Policy … blocks eval” is usually from the
+host/CDN/browser extension — this app does not set a CSP that blocks uploads.
 
 ### Update after code pushes
 
