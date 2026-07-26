@@ -221,8 +221,52 @@ async function pollJob(
   jobId: string,
   onProgress: (pct: number, detail: string, stage: string) => void,
 ): Promise<unknown> {
+  let transientFailures = 0;
+  const maxTransient = 20;
+
   for (;;) {
-    const res = await fetch(`/api/upload-demo/job/${encodeURIComponent(jobId)}`);
+    let res: Response;
+    try {
+      res = await fetch(
+        `/api/upload-demo/job/${encodeURIComponent(jobId)}`,
+      );
+    } catch {
+      transientFailures += 1;
+      if (transientFailures > maxTransient) {
+        throw new Error(
+          "Lost connection while analyzing. The server may have restarted — try again.",
+        );
+      }
+      onProgress(
+        0,
+        `Waiting for server… (retry ${transientFailures}/${maxTransient})`,
+        "analyzing",
+      );
+      await new Promise((r) =>
+        setTimeout(r, Math.min(5000, 500 * transientFailures)),
+      );
+      continue;
+    }
+
+    // Cloudflare 502 while origin was blocked/crashed — retry briefly.
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      transientFailures += 1;
+      if (transientFailures > maxTransient) {
+        throw new Error(
+          "Server unavailable during analysis (502). Often out-of-memory or a crash — redeploy with more RAM and check Docker logs.",
+        );
+      }
+      onProgress(
+        0,
+        `Server busy or restarting… (retry ${transientFailures}/${maxTransient})`,
+        "analyzing",
+      );
+      await new Promise((r) =>
+        setTimeout(r, Math.min(5000, 800 * transientFailures)),
+      );
+      continue;
+    }
+
     const data = (await res.json().catch(() => ({}))) as {
       done?: boolean;
       pct?: number;
@@ -231,9 +275,12 @@ async function pollJob(
       error?: string;
       result?: unknown;
     };
+
     if (!res.ok) {
       throw new Error(data.error || `Job poll failed (${res.status})`);
     }
+
+    transientFailures = 0;
 
     onProgress(
       typeof data.pct === "number" ? data.pct : 0,

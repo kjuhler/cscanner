@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { after, NextResponse } from "next/server";
-import { isDemoUploadName } from "@/lib/demo/decompress";
+import { NextResponse } from "next/server";
 import { createAnalyzeJob } from "@/lib/demo/analyzeJob";
-import { runAnalyzeUploadJob } from "@/lib/demo/runAnalyzeUploadJob";
+import { isDemoUploadName } from "@/lib/demo/decompress";
+import { startAnalyzeJobInBackground } from "@/lib/demo/startAnalyzeJob";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,13 +39,12 @@ export async function POST(request: Request) {
     const jobId = randomUUID();
     await createAnalyzeJob(jobId);
 
-    after(async () => {
-      await runAnalyzeUploadJob({
-        jobId,
-        uploadId,
-        fileName,
-        totalChunks,
-      });
+    // Forked worker (prod) so demoparser does not block / crash the HTTP process.
+    startAnalyzeJobInBackground({
+      jobId,
+      uploadId,
+      fileName,
+      totalChunks,
     });
 
     return NextResponse.json({ jobId });

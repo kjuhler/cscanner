@@ -19,3 +19,5 @@ services:
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
       PORT: "3000"
+      # Demoparser + large demos need headroom; OOM kills show up as Cloudflare 502.
+      NODE_OPTIONS: "--max-old-space-size=4096"

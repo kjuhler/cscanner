@@ -36,6 +36,8 @@ RUN apk add --no-cache libc6-compat \
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Bundled analyze worker — runs demoparser off the HTTP process (avoids Cloudflare 502 while polling).
+COPY --from=builder --chown=nextjs:nodejs /app/analyze-worker.cjs ./analyze-worker.cjs
 
 # Replace any traced @laihoe stubs with the full native package tree (musl).
 USER root

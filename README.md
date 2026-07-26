@@ -78,8 +78,9 @@ Repo includes `Dockerfile` + `docker-compose.yml` for a **Git repository** Porta
 Uploads use **512 KB chunks** by default (6 in parallel) so they work even when
 nginx keeps `client_max_body_size 1m` (a single large POST stalls around ~1%).
 
-The UI shows upload **MB/s + ETA**, then **live stages** while the server
-assembles, decompresses, parses, and analyzes (polls a background job).
+The UI shows upload **MB/s + ETA**, then **live stages** while a **forked worker**
+assembles, decompresses, parses, and analyzes (HTTP process stays up so Cloudflare
+job polls do not 502). Give the container enough RAM (4 GB+ recommended).
 
 **Faster uploads** once you control the proxy — raise the body limit and bump
 chunk size:

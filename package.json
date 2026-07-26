@@ -5,7 +5,8 @@
   "packageManager": "pnpm@8.15.9",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && pnpm run build:analyze-worker",
+    "build:analyze-worker": "node scripts/build-analyze-worker.mjs",
     "start": "next start",
     "lint": "eslint"
   },
@@ -23,6 +24,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/unbzip2-stream": "^1.4.3",
+    "esbuild": "^0.25.5",
     "eslint": "^9.39.0",
     "eslint-config-next": "16.2.11",
     "tailwindcss": "4.1.18",
