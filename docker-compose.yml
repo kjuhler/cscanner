@@ -31,6 +31,7 @@ services:
       PORT: "3000"
       REDIS_URL: redis://redis:6379
       DATA_DIR: /data
+      ANALYZE_WORKER_PATH: /app/analyze-worker.cjs
     volumes:
       - demo-data:/data
     # Web stays light — demoparser runs on the worker.
@@ -49,6 +50,7 @@ services:
       REDIS_URL: redis://redis:6379
       DATA_DIR: /data
       ANALYZE_CONCURRENCY: ${ANALYZE_CONCURRENCY:-1}
+      ANALYZE_WORKER_PATH: /app/analyze-worker.cjs
       # Demoparser + large demos need headroom; OOM kills show up as failed jobs.
       NODE_OPTIONS: "--max-old-space-size=4096"
     volumes:
