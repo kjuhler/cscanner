@@ -13,7 +13,6 @@
 
 # next.js
 /.next/
-/analyze-worker.cjs
 /out/
 
 # production

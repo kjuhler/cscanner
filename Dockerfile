@@ -10,17 +10,23 @@ WORKDIR /app
 FROM base AS deps
 COPY package.json pnpm-lock.yaml ./
 # Lockfile is v6 (pnpm 8). Do not use pnpm@latest (v9/v10).
-RUN pnpm install --frozen-lockfile
+# Portainer/CI often injects NODE_ENV=production which would skip
+# typescript and break `next build` — always install all deps here.
+ENV NODE_ENV=
+RUN pnpm install --frozen-lockfile --prod=false
 
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# analyze-worker.cjs is committed (built via `pnpm build:analyze-worker`) so
+# Docker does not need esbuild at image-build time.
 RUN pnpm build \
   # Flatten @laihoe packages (pnpm symlinks → real files) for the runner image.
   # Avoids "cannot replace directory with file" when overlaying onto standalone.
   && mkdir -p /app/laihoe-flat \
-  && cp -aL /app/node_modules/@laihoe/. /app/laihoe-flat/
+  && cp -aL /app/node_modules/@laihoe/. /app/laihoe-flat/ \
+  && test -f /app/analyze-worker.cjs
 
 FROM node:22-alpine AS runner
 WORKDIR /app

@@ -5,7 +5,7 @@
   "packageManager": "pnpm@8.15.9",
   "scripts": {
     "dev": "next dev",
-    "build": "next build && pnpm run build:analyze-worker",
+    "build": "next build",
     "build:analyze-worker": "node scripts/build-analyze-worker.mjs",
     "start": "next start",
     "lint": "eslint"

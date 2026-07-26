@@ -79,8 +79,15 @@ Uploads use **512 KB chunks** by default (6 in parallel) so they work even when
 nginx keeps `client_max_body_size 1m` (a single large POST stalls around ~1%).
 
 The UI shows upload **MB/s + ETA**, then **live stages** while a **forked worker**
-assembles, decompresses, parses, and analyzes (HTTP process stays up so Cloudflare
-job polls do not 502). Give the container enough RAM (4 GB+ recommended).
+(`analyze-worker.cjs`) assembles, decompresses, parses, and analyzes so the HTTP
+process stays up (avoids Cloudflare 502 on job polls). Give the container enough
+RAM (4 GB+ recommended).
+
+After changing analyze/parse code, regenerate the worker before commit/deploy:
+
+```bash
+pnpm build:analyze-worker
+```
 
 **Faster uploads** once you control the proxy — raise the body limit and bump
 chunk size:
