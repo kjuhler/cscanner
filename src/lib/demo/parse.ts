@@ -7,6 +7,8 @@ import {
 } from "@laihoe/demoparser2";
 import type { DemoEventRow, ParsedDemo } from "./types";
 
+export type ParseProgressFn = (detail: string, pct: number) => void;
+
 function asRows(value: unknown): DemoEventRow[] {
   if (!Array.isArray(value)) return [];
   return value as DemoEventRow[];
@@ -50,11 +52,19 @@ function buildSampleTicks(duration: number, maxSamples: number): number[] {
 /**
  * Parse a CS2 .dem file into the event tables needed for analysis.
  * Uses demoparser2's query API (not a streaming event loop).
+ * Progress pct is absolute within the post-upload pipeline (≈15–75).
  */
-export function parseDemoFile(path: string): ParsedDemo {
+export function parseDemoFile(
+  path: string,
+  onProgress?: ParseProgressFn,
+): ParsedDemo {
+  const report = onProgress ?? (() => {});
+
+  report("Reading demo header…", 15);
   const header = (parseHeader(path) ?? {}) as Record<string, unknown>;
   const playerInfo = asPlayerInfo(parsePlayerInfo(path));
 
+  report("Parsing kill & damage events…", 18);
   const deaths = asRows(
     parseEvent(path, "player_death", [], [
       "total_rounds_played",
@@ -64,6 +74,8 @@ export function parseDemoFile(path: string): ParsedDemo {
   const hurts = asRows(
     parseEvent(path, "player_hurt", [], ["total_rounds_played"]),
   );
+
+  report("Parsing utility events…", 25);
   const blinds = asRows(
     parseEvent(path, "player_blind", [], ["total_rounds_played"]),
   );
@@ -105,6 +117,8 @@ export function parseDemoFile(path: string): ParsedDemo {
   } catch {
     // optional event — ignore
   }
+
+  report("Parsing round timeline…", 35);
   const roundStarts = asRows(
     parseEvent(path, "round_start", [], ["total_rounds_played"]),
   );
@@ -127,6 +141,7 @@ export function parseDemoFile(path: string): ParsedDemo {
     .map((row) => Number(row.tick ?? row.Tick ?? NaN))
     .filter((t) => Number.isFinite(t));
 
+  report("Parsing freeze-time economy…", 40);
   let freezeTicks: DemoEventRow[] = [];
   if (freezeTickNumbers.length > 0) {
     try {
@@ -154,6 +169,7 @@ export function parseDemoFile(path: string): ParsedDemo {
   // ~1200 frames keeps replay smooth enough while staying faster on small hosts.
   let motionTicks: DemoEventRow[] = [];
   const sampleTicks = buildSampleTicks(duration, 1200);
+  report("Parsing motion frames (slowest step)…", 45);
   if (sampleTicks.length > 0) {
     try {
       motionTicks = asRows(
@@ -168,12 +184,14 @@ export function parseDemoFile(path: string): ParsedDemo {
     }
   }
 
+  report("Parsing grenade trajectories…", 70);
   let grenadeTrajectories: DemoEventRow[] = [];
   try {
     grenadeTrajectories = asRows(parseGrenades(path));
   } catch {
     grenadeTrajectories = [];
   }
+  report("Parse complete", 75);
 
   return {
     path,
