@@ -16,7 +16,11 @@ FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm build
+RUN pnpm build \
+  # Flatten @laihoe packages (pnpm symlinks → real files) for the runner image.
+  # Avoids "cannot replace directory with file" when overlaying onto standalone.
+  && mkdir -p /app/laihoe-flat \
+  && cp -aL /app/node_modules/@laihoe/. /app/laihoe-flat/
 
 FROM node:22-alpine AS runner
 WORKDIR /app
@@ -33,8 +37,10 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Ensure demoparser2 native bindings are available in standalone (Alpine = musl).
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@laihoe ./node_modules/@laihoe
+# Replace any traced @laihoe stubs with the full native package tree (musl).
+USER root
+RUN rm -rf ./node_modules/@laihoe
+COPY --from=builder --chown=nextjs:nodejs /app/laihoe-flat ./node_modules/@laihoe
 
 USER nextjs
 EXPOSE 3000

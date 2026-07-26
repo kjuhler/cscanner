@@ -46,13 +46,18 @@ pnpm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-## Deploy (Portainer / Docker)
+## Deploy (Portainer / GitHub)
 
-Repo includes `Dockerfile` + `docker-compose.yml` for a Git-based Portainer stack.
+Repo includes `Dockerfile` + `docker-compose.yml` for a **Git repository** Portainer stack. The app image is **built on the host** from the repo — it is **not** on Docker Hub.
 
 **Host port:** `3003` → container `3000` (chosen because 3000–3002 are already used on the host).
 
-### Portainer steps
+### Requirements
+
+- Portainer on **Docker Standalone** (not Swarm — Swarm cannot `build:` from compose)
+- Enable **relative path** / Git build support if Portainer asks (needed so `build.context: .` can see the Dockerfile)
+
+### Create the stack
 
 1. Push this repo to GitHub (`kjuhler/cscanner`).
 2. Portainer → **Stacks** → **Add stack** → **Repository**.
@@ -68,7 +73,14 @@ Repo includes `Dockerfile` + `docker-compose.yml` for a Git-based Portainer stac
 
 6. Deploy the stack. Open `http://<host>:3003`.
 
-Rebuild after code pushes: Portainer stack → **Pull and redeploy** (enable rebuild if offered), or recreate the stack so the image rebuilds from Git.
+### Update after code pushes
+
+1. Open the stack → **Pull and redeploy** (or Editor → **Update the stack**).
+2. **Uncheck** “Re-pull image” / “Pull latest image”.  
+   That option tries `docker pull cscanner` from Docker Hub and fails with *pull access denied*.
+3. Redeploy so Portainer rebuilds from Git (`pull_policy: build` in compose).
+
+If the UI still tries to pull: delete the stack’s old image under **Images**, then redeploy without “Re-pull image”.
 
 ### Local Docker smoke test
 

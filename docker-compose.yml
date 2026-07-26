@@ -1,10 +1,11 @@
 services:
   cscanner:
+    # Built from this Git repo by Portainer (not pulled from Docker Hub).
     build:
       context: .
       dockerfile: Dockerfile
-    # Local-only image name — do not pull from Docker Hub.
-    image: cscanner:latest
+    # Force rebuild from Dockerfile on deploy/update — required for Portainer Git stacks.
+    # Do NOT use Portainer "Re-pull image" — there is no Hub image named cscanner.
     pull_policy: build
     container_name: cscanner
     restart: unless-stopped
