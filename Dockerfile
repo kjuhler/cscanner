@@ -8,7 +8,7 @@ RUN apk add --no-cache libc6-compat \
 WORKDIR /app
 
 FROM base AS deps
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml .npmrc ./
 # Lockfile is v6 (pnpm 8). Do not use pnpm@latest (v9/v10).
 # Portainer/CI often injects NODE_ENV=production which would skip
 # typescript and break `next build` — always install all deps here.
@@ -22,10 +22,24 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # analyze-worker.cjs is committed (built via `pnpm build:analyze-worker`) so
 # Docker does not need esbuild at image-build time.
 RUN pnpm build \
-  # Flatten @laihoe packages (pnpm symlinks → real files) for the runner image.
-  # Avoids "cannot replace directory with file" when overlaying onto standalone.
+  # Collect EVERY @laihoe package (main + linux-*-musl natives) from pnpm's
+  # virtual store. A plain copy of node_modules/@laihoe often misses the
+  # platform binding that demoparser2 require()'s at runtime (esp. arm64).
   && mkdir -p /app/laihoe-flat \
-  && cp -aL /app/node_modules/@laihoe/. /app/laihoe-flat/
+  && for dir in /app/node_modules/.pnpm/@laihoe+*/node_modules/@laihoe/*; do \
+       [ -e "$dir" ] || continue; \
+       name="$(basename "$dir")"; \
+       rm -rf "/app/laihoe-flat/$name"; \
+       cp -aL "$dir" "/app/laihoe-flat/$name"; \
+     done \
+  && if [ -d /app/node_modules/@laihoe ]; then \
+       cp -aL /app/node_modules/@laihoe/. /app/laihoe-flat/; \
+     fi \
+  && echo "laihoe packages in image:" \
+  && ls -la /app/laihoe-flat \
+  && test -d /app/laihoe-flat/demoparser2 \
+  && ( test -d /app/laihoe-flat/demoparser2-linux-arm64-musl \
+       || test -d /app/laihoe-flat/demoparser2-linux-x64-musl )
 
 FROM node:22-alpine AS runner
 WORKDIR /app

@@ -15,6 +15,8 @@
   },
   "dependencies": {
     "@laihoe/demoparser2": "^0.41.3",
+    "@laihoe/demoparser2-linux-arm64-musl": "0.41.3",
+    "@laihoe/demoparser2-linux-x64-musl": "0.41.3",
     "bullmq": "^5.81.2",
     "ioredis": "^5.11.1",
     "next": "16.2.11",
