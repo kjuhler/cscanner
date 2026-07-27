@@ -111,6 +111,7 @@ function DemoViewerContent({ mode, runId }: ViewerProps) {
             initialFocusId={focusPlayerId ?? "all"}
             onFocusChange={onFocusChange}
             onReset={onReset}
+            onAnalysisUpdate={setAnalysis}
           />
         ) : null}
       </main>

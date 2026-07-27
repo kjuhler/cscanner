@@ -17,6 +17,7 @@ export function DemoImportForm({ onImported, disabled }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reanalyze, setReanalyze] = useState(true);
 
   const onSubmit = useCallback(
     async (file: File) => {
@@ -25,6 +26,7 @@ export function DemoImportForm({ onImported, disabled }: Props) {
       try {
         const form = new FormData();
         form.append("file", file);
+        if (reanalyze) form.append("reanalyze", "true");
         const res = await fetch("/api/demo/run/import", {
           method: "POST",
           body: form,
@@ -51,7 +53,7 @@ export function DemoImportForm({ onImported, disabled }: Props) {
         if (inputRef.current) inputRef.current.value = "";
       }
     },
-    [onImported],
+    [onImported, reanalyze],
   );
 
   return (
@@ -64,6 +66,16 @@ export function DemoImportForm({ onImported, disabled }: Props) {
         created.
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-xs text-[var(--muted)]">
+          <input
+            type="checkbox"
+            checked={reanalyze}
+            onChange={(e) => setReanalyze(e.target.checked)}
+            disabled={disabled || loading}
+            className="accent-[var(--amber)]"
+          />
+          Apply latest coaching rules
+        </label>
         <input
           ref={inputRef}
           type="file"

@@ -1,6 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  startTransition,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import type {
   DemoReplay,
   ReplayEvent,
@@ -24,6 +33,56 @@ type Props = {
   mapName?: string;
 };
 
+export type DemoReplayJumpTarget = {
+  tick: number;
+  focusSteamId?: string;
+  zoom?: boolean;
+  x?: number;
+  y?: number;
+  /** Follow nade flight / impact instead of only the player. Default true. */
+  followAction?: boolean;
+};
+
+export type DemoReplayHandle = {
+  jumpTo: (target: DemoReplayJumpTarget) => void;
+};
+
+/** Camera path for a utility throw or impact play. */
+type ActionFollow = {
+  kind: ReplayEventKind;
+  throwTick: number;
+  popTick: number;
+  throwX: number;
+  throwY: number;
+  popX: number;
+  popY: number;
+  holdTicks: number;
+  focusSteamId?: string;
+  targetSteamId?: string;
+  /** Blinded players — camera holds on their cluster after a flash pops. */
+  blindSteamIds?: string[];
+};
+
+function blindInfoForPlayer(
+  steamId: string,
+  activeOverlays: ReplayEvent[],
+  tick: number,
+  tickRate: number,
+): { blinded: boolean; enemyFlash: boolean; blindPercent: number } {
+  for (const ev of activeOverlays) {
+    if (ev.kind !== "flash") continue;
+    const blind = ev.blinds?.find((b) => b.steamId === steamId);
+    if (!blind) continue;
+    const elapsedSec = (tick - ev.tick) / Math.max(1, tickRate);
+    if (blind.duration > 0 && elapsedSec > blind.duration) continue;
+    const enemyFlash =
+      Boolean(ev.actorTeam) && blind.team > 0 && blind.team !== ev.actorTeam;
+    const blindPercent = blind.blindPercent ?? (blind.duration > 0 ? Math.min(1, blind.duration / 2.5) : 1);
+    return { blinded: true, enemyFlash, blindPercent };
+  }
+  return { blinded: false, enemyFlash: false, blindPercent: 0 };
+}
+
 const KIND_META: Record<
   ReplayEventKind,
   { color: string; label: string; mapRadius: number }
@@ -44,6 +103,134 @@ function findFrameIndex(frames: DemoReplay["frames"], tick: number): number {
     else hi = mid - 1;
   }
   return lo;
+}
+
+function poseAt(
+  frames: DemoReplay["frames"],
+  tick: number,
+  steamId: string,
+): { x: number; y: number } | null {
+  if (frames.length === 0) return null;
+  const i = findFrameIndex(frames, tick);
+  const pose = frames[i]?.players.find((p) => p.steamId === steamId);
+  return pose ? { x: pose.x, y: pose.y } : null;
+}
+
+function buildActionFollow(
+  ev: ReplayEvent,
+  tickRate: number,
+): ActionFollow {
+  const isNade = ev.kind !== "kill";
+  const popX = ev.x;
+  const popY = ev.y;
+  const throwX = ev.throwX ?? popX;
+  const throwY = ev.throwY ?? popY;
+  const throwTick =
+    ev.throwTick ??
+    (isNade ? ev.tick - Math.round(tickRate * 1.2) : ev.tick);
+  const holdSec = ev.kind === "flash" ? 2.5 : ev.kind === "kill" ? 1.5 : 2;
+  return {
+    kind: ev.kind,
+    throwTick,
+    popTick: ev.tick,
+    throwX,
+    throwY,
+    popX,
+    popY,
+    holdTicks: Math.round(tickRate * holdSec),
+    focusSteamId: ev.actorSteamId,
+    targetSteamId: ev.targetSteamId,
+    blindSteamIds:
+      ev.kind === "flash"
+        ? (ev.blinds ?? []).map((b) => b.steamId).filter(Boolean)
+        : undefined,
+  };
+}
+
+/** World focus point for the action camera at the current tick. */
+function actionFocusAtTick(
+  action: ActionFollow,
+  tick: number,
+  frames: DemoReplay["frames"],
+): { x: number; y: number } {
+  if (tick < action.throwTick) {
+    if (action.focusSteamId) {
+      const p = poseAt(frames, tick, action.focusSteamId);
+      if (p) return p;
+    }
+    return { x: action.throwX, y: action.throwY };
+  }
+
+  if (tick < action.popTick) {
+    const span = Math.max(1, action.popTick - action.throwTick);
+    const t = (tick - action.throwTick) / span;
+    return {
+      x: action.throwX + (action.popX - action.throwX) * t,
+      y: action.throwY + (action.popY - action.throwY) * t,
+    };
+  }
+
+  const afterPop = tick - action.popTick;
+  if (afterPop <= action.holdTicks) {
+    if (action.kind === "kill" && action.targetSteamId) {
+      const victim = poseAt(frames, tick, action.targetSteamId);
+      if (victim) return victim;
+    }
+    if (action.blindSteamIds && action.blindSteamIds.length > 0) {
+      const points: { x: number; y: number }[] = [];
+      for (const id of action.blindSteamIds) {
+        const p = poseAt(frames, tick, id);
+        if (p) points.push(p);
+      }
+      if (points.length > 0) {
+        // Blend pop location with blinded cluster so we track the fight.
+        const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
+        const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
+        const blend = Math.min(1, afterPop / Math.max(1, action.holdTicks * 0.35));
+        return {
+          x: action.popX + (cx - action.popX) * blend,
+          y: action.popY + (cy - action.popY) * blend,
+        };
+      }
+    }
+    return { x: action.popX, y: action.popY };
+  }
+
+  // Aftermath: follow the actor (or victim for kills).
+  const followId =
+    action.kind === "kill"
+      ? (action.focusSteamId ?? action.targetSteamId)
+      : action.focusSteamId;
+  if (followId) {
+    const p = poseAt(frames, tick, followId);
+    if (p) return p;
+  }
+  return { x: action.popX, y: action.popY };
+}
+
+function findActionNearTick(
+  replay: DemoReplay,
+  tick: number,
+  focusSteamId?: string,
+): ReplayEvent | null {
+  const window = Math.max(32, Math.round(replay.tickRate * 2.5));
+  const candidates = replay.events.filter(
+    (e) => Math.abs(e.tick - tick) <= window,
+  );
+  if (candidates.length === 0) return null;
+
+  const scored = candidates.map((e) => {
+    let score = -Math.abs(e.tick - tick);
+    if (focusSteamId && e.actorSteamId === focusSteamId) score += 40;
+    if (focusSteamId && e.targetSteamId === focusSteamId) score += 20;
+    if (e.kind === "flash") score += 15;
+    else if (e.kind === "he" || e.kind === "molotov") score += 10;
+    else if (e.kind === "smoke") score += 5;
+    else if (e.kind === "kill") score += 8;
+    return { e, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0]?.e ?? null;
 }
 
 function shortestYawDelta(from: number, to: number): number {
@@ -142,7 +329,8 @@ function throwPos(
   return eventPos({ x: ev.throwX, y: ev.throwY }, cal, poses);
 }
 
-export function DemoReplayPlayer({ replay, mapName }: Props) {
+export const DemoReplayPlayer = forwardRef<DemoReplayHandle, Props>(
+  function DemoReplayPlayer({ replay, mapName }, ref) {
   const resolvedMap = mapName || replay.mapName;
   const cal = useMemo(
     () =>
@@ -168,9 +356,29 @@ export function DemoReplayPlayer({ replay, mapName }: Props) {
       replay.players[0]?.steamId ??
       "",
   );
+  const [actionZoom, setActionZoom] = useState(false);
+  const [followFocus, setFollowFocus] = useState(false);
+  const [actionFollow, setActionFollow] = useState<ActionFollow | null>(null);
+  const [zoomOrigin, setZoomOrigin] = useState({ left: 50, top: 50 });
+  const [draggingMap, setDraggingMap] = useState(false);
+  const [hoveredPlayerId, setHoveredPlayerId] = useState<string | null>(null);
+  const mapStageRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originLeft: number;
+    originTop: number;
+  } | null>(null);
   const lastEventIdx = useRef(-1);
   const rafRef = useRef<number | null>(null);
   const lastTs = useRef<number | null>(null);
+  const playingRef = useRef(false);
+  const tickRef = useRef(replay.startTick);
+  const endTickRef = useRef(replay.endTick);
+  const speedRef = useRef(speed);
+
+  const ZOOM_SCALE = 2.25;
 
   useEffect(() => {
     setRadarSrc(cal ? "local" : "none");
@@ -183,6 +391,11 @@ export function DemoReplayPlayer({ replay, mapName }: Props) {
   }, [replay.players]);
 
   const currentRound = replay.rounds[roundIdx] ?? null;
+
+  playingRef.current = playing;
+  tickRef.current = tick;
+  speedRef.current = speed;
+  endTickRef.current = currentRound?.endTick ?? replay.endTick;
 
   const { poses, frameTick } = useMemo(() => {
     const frames = replay.frames;
@@ -201,6 +414,50 @@ export function DemoReplayPlayer({ replay, mapName }: Props) {
       frameTick: tick,
     };
   }, [replay.frames, tick]);
+
+  // Camera: follow nade flight / impact, then the focused player.
+  useEffect(() => {
+    if (!actionZoom || !cal || draggingMap) return;
+
+    if (actionFollow) {
+      const focus = actionFocusAtTick(actionFollow, tick, replay.frames);
+      const next = worldToRadarPercent(focus.x, focus.y, cal);
+      setZoomOrigin((prev) => {
+        if (
+          Math.abs(prev.left - next.left) < 0.12 &&
+          Math.abs(prev.top - next.top) < 0.12
+        ) {
+          return prev;
+        }
+        return next;
+      });
+      return;
+    }
+
+    if (!followFocus || !focusSteamId) return;
+    const pose = poses.find((p) => p.steamId === focusSteamId);
+    if (!pose || (!pose.alive && pose.x === 0 && pose.y === 0)) return;
+    const next = worldToRadarPercent(pose.x, pose.y, cal);
+    setZoomOrigin((prev) => {
+      if (
+        Math.abs(prev.left - next.left) < 0.15 &&
+        Math.abs(prev.top - next.top) < 0.15
+      ) {
+        return prev;
+      }
+      return next;
+    });
+  }, [
+    actionZoom,
+    actionFollow,
+    followFocus,
+    cal,
+    focusSteamId,
+    tick,
+    draggingMap,
+    poses,
+    replay.frames,
+  ]);
 
   const activeOverlays = useMemo(() => {
     return replay.events.filter((ev) => {
@@ -236,52 +493,243 @@ export function DemoReplayPlayer({ replay, mapName }: Props) {
     lastEventIdx.current = idx;
   }, [tick, replay.events]);
 
+  // Cleanup playback on unmount only — loop is started from event handlers,
+  // not from an effect (avoids React update-depth storms with rAF + setState).
   useEffect(() => {
-    if (!playing) {
-      lastTs.current = null;
-      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
-      return;
-    }
+    return () => {
+      playingRef.current = false;
+      if (rafRef.current != null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    };
+  }, []);
 
-    const end = currentRound?.endTick ?? replay.endTick;
+  function stopPlayback() {
+    playingRef.current = false;
+    setPlaying(false);
+    lastTs.current = null;
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+  }
+
+  function startPlayback() {
+    // Restart cleanly if a loop is already running (e.g. Watch while playing).
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    lastTs.current = null;
+
+    const end = endTickRef.current;
+    if (tickRef.current >= end) {
+      const start = currentRound?.startTick ?? replay.startTick;
+      tickRef.current = start;
+      setTick(start);
+    }
+    playingRef.current = true;
+    setPlaying(true);
     const tickRate = replay.tickRate || 64;
 
     const step = (ts: number) => {
+      if (!playingRef.current) return;
+
       if (lastTs.current == null) lastTs.current = ts;
-      const dt = (ts - lastTs.current) / 1000;
+      const dt = Math.min(0.05, (ts - lastTs.current) / 1000);
       lastTs.current = ts;
-      setTick((prev) => {
-        const next = prev + dt * tickRate * speed;
-        if (next >= end) {
-          setPlaying(false);
-          return end;
-        }
-        return next;
+      if (dt <= 0) {
+        rafRef.current = requestAnimationFrame(step);
+        return;
+      }
+
+      const endNow = endTickRef.current;
+      const prev = tickRef.current;
+      if (prev >= endNow) {
+        stopPlayback();
+        return;
+      }
+
+      const next = Math.min(endNow, prev + dt * tickRate * speedRef.current);
+      tickRef.current = next;
+      startTransition(() => {
+        setTick(next);
       });
+
+      if (next >= endNow) {
+        stopPlayback();
+        return;
+      }
       rafRef.current = requestAnimationFrame(step);
     };
 
     rafRef.current = requestAnimationFrame(step);
-    return () => {
-      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
-    };
-  }, [playing, speed, currentRound, replay.endTick, replay.tickRate]);
+  }
+
+  function togglePlayback() {
+    if (playingRef.current) stopPlayback();
+    else startPlayback();
+  }
+
+  function roundIndexForTick(at: number): number {
+    const exact = replay.rounds.findIndex(
+      (r) => at >= r.startTick && at <= r.endTick,
+    );
+    if (exact >= 0) return exact;
+    let best = 0;
+    for (let i = 0; i < replay.rounds.length; i++) {
+      if (replay.rounds[i]!.startTick <= at) best = i;
+    }
+    return best;
+  }
 
   function jumpToRound(idx: number) {
     const r = replay.rounds[idx];
     if (!r) return;
+    stopPlayback();
     setRoundIdx(idx);
     setTick(r.startTick);
-    setPlaying(false);
+    tickRef.current = r.startTick;
+    endTickRef.current = r.endTick;
   }
 
   function jumpToEvent(ev: ReplayEvent) {
-    const idx = replay.rounds.findIndex((r) => r.round === ev.round);
-    if (idx >= 0) setRoundIdx(idx);
-    // Land a few ticks before the pop so throw → effect is visible.
-    const lead = Math.round(replay.tickRate * 0.35);
-    setTick(Math.max(replay.startTick, ev.tick - lead));
-    setPlaying(false);
+    const idx = roundIndexForTick(ev.tick);
+    const round = replay.rounds[idx];
+    if (idx >= 0) {
+      setRoundIdx(idx);
+      if (round) endTickRef.current = round.endTick;
+    }
+    const lead = Math.round(replay.tickRate * 1.5);
+    const action = buildActionFollow(ev, replay.tickRate || 64);
+    let startAt = Math.max(
+      replay.startTick,
+      Math.min(ev.tick - lead, action.throwTick - Math.round(replay.tickRate * 0.4)),
+    );
+    if (round) {
+      startAt = Math.min(startAt, Math.max(round.startTick, round.endTick - 1));
+      startAt = Math.max(startAt, round.startTick);
+    }
+    setTick(startAt);
+    tickRef.current = startAt;
+    if (ev.actorSteamId) setFocusSteamId(ev.actorSteamId);
+    setActionFollow(action);
+    setFollowFocus(true);
+    setActionZoom(true);
+    if (cal) {
+      const focus = actionFocusAtTick(action, startAt, replay.frames);
+      setZoomOrigin(worldToRadarPercent(focus.x, focus.y, cal));
+    }
+    startPlayback();
+  }
+
+  function jumpToTarget(target: DemoReplayJumpTarget) {
+    const idx = roundIndexForTick(target.tick);
+    const round = replay.rounds[idx];
+    if (idx >= 0) {
+      setRoundIdx(idx);
+      if (round) endTickRef.current = round.endTick;
+    }
+
+    const preferAction = target.followAction !== false;
+    const actionEvent = preferAction
+      ? findActionNearTick(replay, target.tick, target.focusSteamId)
+      : null;
+    const action = actionEvent
+      ? buildActionFollow(actionEvent, replay.tickRate || 64)
+      : null;
+
+    const lead = Math.round(replay.tickRate * 1.5);
+    let startAt = Math.max(replay.startTick, target.tick - lead);
+    if (action) {
+      startAt = Math.min(
+        startAt,
+        Math.max(
+          replay.startTick,
+          action.throwTick - Math.round((replay.tickRate || 64) * 0.4),
+        ),
+      );
+    }
+    if (round) {
+      startAt = Math.min(startAt, Math.max(round.startTick, round.endTick - 1));
+      startAt = Math.max(startAt, round.startTick);
+    }
+    setTick(startAt);
+    tickRef.current = startAt;
+
+    if (target.focusSteamId) setFocusSteamId(target.focusSteamId);
+    else if (action?.focusSteamId) setFocusSteamId(action.focusSteamId);
+
+    setActionFollow(action);
+    setFollowFocus(true);
+
+    if (target.zoom !== false) {
+      setActionZoom(true);
+      if (cal) {
+        if (action) {
+          const focus = actionFocusAtTick(action, startAt, replay.frames);
+          setZoomOrigin(worldToRadarPercent(focus.x, focus.y, cal));
+        } else if (target.focusSteamId) {
+          const pose = poseAt(replay.frames, target.tick, target.focusSteamId);
+          if (pose) setZoomOrigin(worldToRadarPercent(pose.x, pose.y, cal));
+          else if (target.x != null && target.y != null) {
+            setZoomOrigin(worldToRadarPercent(target.x, target.y, cal));
+          }
+        } else if (target.x != null && target.y != null) {
+          setZoomOrigin(worldToRadarPercent(target.x, target.y, cal));
+        }
+      }
+    }
+    startPlayback();
+    mapStageRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  useImperativeHandle(ref, () => ({
+    jumpTo: jumpToTarget,
+  }));
+
+  function onMapPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    // Manual pan takes over from auto-follow.
+    setFollowFocus(false);
+    setActionFollow(null);
+    if (!actionZoom) setActionZoom(true);
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      originLeft: zoomOrigin.left,
+      originTop: zoomOrigin.top,
+    };
+    setDraggingMap(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function onMapPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const rect = mapStageRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return;
+    // Drag map content with the pointer (origin moves opposite to finger).
+    const dx = ((e.clientX - drag.startX) / rect.width) * 100 / ZOOM_SCALE;
+    const dy = ((e.clientY - drag.startY) / rect.height) * 100 / ZOOM_SCALE;
+    setZoomOrigin({
+      left: Math.min(95, Math.max(5, drag.originLeft - dx)),
+      top: Math.min(95, Math.max(5, drag.originTop - dy)),
+    });
+  }
+
+  function onMapPointerUp(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!dragRef.current || dragRef.current.pointerId !== e.pointerId) return;
+    dragRef.current = null;
+    setDraggingMap(false);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
   }
 
   const rangeStart = currentRound?.startTick ?? replay.startTick;
@@ -319,7 +767,33 @@ export function DemoReplayPlayer({ replay, mapName }: Props) {
       <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_280px]">
         {/* Map stage */}
         <div className="relative border-b border-[var(--border)] p-4 lg:border-b-0 lg:border-r">
-          <div className="relative mx-auto aspect-square w-full max-w-[560px] overflow-hidden border border-[var(--border)] bg-[#07090b] shadow-[inset_0_0_60px_rgba(0,0,0,0.45)]">
+          <div
+            ref={mapStageRef}
+            className={`relative mx-auto aspect-square w-full max-w-[560px] overflow-hidden border border-[var(--border)] bg-[#07090b] shadow-[inset_0_0_60px_rgba(0,0,0,0.45)] touch-none select-none ${
+              draggingMap ? "cursor-grabbing" : "cursor-grab"
+            }`}
+            onPointerDown={onMapPointerDown}
+            onPointerMove={onMapPointerMove}
+            onPointerUp={onMapPointerUp}
+            onPointerCancel={onMapPointerUp}
+          >
+            <div
+              className={`pointer-events-none absolute inset-0 ease-out ${
+                draggingMap
+                  ? ""
+                  : followFocus && actionZoom
+                    ? "transition-[transform-origin] duration-75"
+                    : "transition-transform duration-300"
+              }`}
+              style={
+                actionZoom
+                  ? {
+                      transform: `scale(${ZOOM_SCALE})`,
+                      transformOrigin: `${zoomOrigin.left}% ${zoomOrigin.top}%`,
+                    }
+                  : undefined
+              }
+            >
             {hasRadar && cal ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -358,7 +832,7 @@ export function DemoReplayPlayer({ replay, mapName }: Props) {
                 isNade &&
                 from &&
                 (tick - ev.tick) / Math.max(1, replay.tickRate) < 2.5;
-              const showPopLabel = false; // labels live on the nade overlays now
+              const showPopLabel = actionZoom && isNade;
 
               return (
                 <div key={`ov-${ev.kind}-${ev.tick}-${i}`}>
@@ -549,22 +1023,22 @@ export function DemoReplayPlayer({ replay, mapName }: Props) {
               }
               const isCt = p.team === 3;
               const name = nameById.get(p.steamId) ?? p.steamId;
-              const blinded = activeOverlays.some(
-                (ev) =>
-                  ev.kind === "flash" &&
-                  ev.blinds?.some((b) => {
-                    if (b.steamId !== p.steamId) return false;
-                    const elapsedSec =
-                      (tick - ev.tick) / Math.max(1, replay.tickRate);
-                    return !(b.duration > 0 && elapsedSec > b.duration);
-                  }),
+              const blindInfo = blindInfoForPlayer(
+                p.steamId,
+                activeOverlays,
+                tick,
+                replay.tickRate,
               );
               return (
                 <div
                   key={p.steamId}
-                  className="absolute z-[4]"
+                  className="pointer-events-auto absolute z-[20]"
                   style={{ left: `${pos.left}%`, top: `${pos.top}%` }}
-                  title={`${name} · look ${Math.round(p.yaw)}°`}
+                  onPointerEnter={() => setHoveredPlayerId(p.steamId)}
+                  onPointerLeave={() =>
+                    setHoveredPlayerId((id) => (id === p.steamId ? null : id))
+                  }
+                  onPointerDown={(e) => e.stopPropagation()}
                 >
                   {/*
                     Source yaw: 0 = +X (east), 90 = +Y (north).
@@ -578,9 +1052,14 @@ export function DemoReplayPlayer({ replay, mapName }: Props) {
                         : isCt
                           ? "bg-sky-400"
                           : "bg-[var(--amber)]"
-                    } ${blinded ? "ring-2 ring-[var(--amber-bright)]" : ""}`}
+                    } ${blindInfo.blinded ? "ring-2 ring-[var(--amber-bright)]" : ""} ${
+                      hoveredPlayerId === p.steamId ? "ring-2 ring-white/80" : ""
+                    }`}
                     style={{
                       transform: `translate(-50%, -50%) rotate(${90 - p.yaw}deg)`,
+                      opacity: blindInfo.blinded
+                        ? 0.45 + blindInfo.blindPercent * 0.55
+                        : 1,
                     }}
                   >
                     <span
@@ -596,9 +1075,33 @@ export function DemoReplayPlayer({ replay, mapName }: Props) {
                       }}
                     />
                   </div>
-                  {p.alive ? (
+                  {blindInfo.blinded && p.alive ? (
+                    <span
+                      className={`absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full text-[8px] font-bold shadow ${
+                        blindInfo.enemyFlash
+                          ? "bg-[var(--danger)] text-white"
+                          : "bg-[var(--amber)] text-black"
+                      }`}
+                    >
+                      ✦
+                    </span>
+                  ) : null}
+                  {p.alive && hoveredPlayerId !== p.steamId ? (
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 whitespace-nowrap rounded bg-black/55 px-1 py-px text-[9px] font-medium text-[var(--foreground)]">
                       {initials(name)}
+                    </span>
+                  ) : null}
+                  {hoveredPlayerId === p.steamId ? (
+                    <span className="absolute left-3 top-1/2 z-30 -translate-y-1/2 whitespace-nowrap rounded border border-[var(--border)] bg-black/90 px-1.5 py-0.5 text-[11px] font-medium text-[var(--foreground)] shadow-lg">
+                      {name}
+                      {!p.alive ? (
+                        <span className="ml-1 text-[var(--muted)]">dead</span>
+                      ) : null}
+                      {blindInfo.blinded && p.alive ? (
+                        <span className="ml-1 text-[var(--amber-bright)]">
+                          · {Math.round(blindInfo.blindPercent * 100)}% blind
+                        </span>
+                      ) : null}
                     </span>
                   ) : null}
                 </div>
@@ -638,12 +1141,34 @@ export function DemoReplayPlayer({ replay, mapName }: Props) {
                   </div>
                 ))}
             </div>
+            </div>
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button
               type="button"
-              onClick={() => setPlaying((p) => !p)}
+              onClick={() => {
+                setActionZoom((z) => {
+                  const next = !z;
+                  if (next) setFollowFocus(true);
+                  else {
+                    setFollowFocus(false);
+                    setActionFollow(null);
+                  }
+                  return next;
+                });
+              }}
+              className={`border px-3 py-2 text-xs uppercase tracking-[0.12em] ${
+                actionZoom
+                  ? "border-[var(--amber)]/50 bg-[var(--amber)]/15 text-[var(--amber-bright)]"
+                  : "border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--muted)] hover:text-[var(--foreground)]"
+              }`}
+            >
+              {actionZoom ? "Full map" : "Focus play"}
+            </button>
+            <button
+              type="button"
+              onClick={() => togglePlayback()}
               className="border border-[var(--amber)]/50 bg-[var(--amber)]/15 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--amber-bright)] hover:bg-[var(--amber)]/25"
             >
               {playing ? "Pause" : "Play"}
@@ -651,8 +1176,9 @@ export function DemoReplayPlayer({ replay, mapName }: Props) {
             <button
               type="button"
               onClick={() => {
+                stopPlayback();
                 setTick(rangeStart);
-                setPlaying(false);
+                tickRef.current = rangeStart;
               }}
               className="border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2 text-xs uppercase tracking-[0.12em] text-[var(--muted)] hover:text-[var(--foreground)]"
             >
@@ -663,6 +1189,12 @@ export function DemoReplayPlayer({ replay, mapName }: Props) {
               {currentRound ? ` · R${currentRound.round}` : ""}
               {" · "}
               frame ~{Math.round(frameTick)}
+              {actionZoom ? " · drag map to pan" : ""}
+              {actionFollow && actionZoom
+                ? ` · following ${actionFollow.kind}`
+                : followFocus && actionZoom
+                  ? " · following"
+                  : ""}
             </span>
           </div>
 
@@ -673,8 +1205,10 @@ export function DemoReplayPlayer({ replay, mapName }: Props) {
             step={1}
             value={Math.min(rangeEnd, Math.max(rangeStart, tick))}
             onChange={(e) => {
-              setTick(Number(e.target.value));
-              setPlaying(false);
+              const t = Number(e.target.value);
+              stopPlayback();
+              tickRef.current = t;
+              setTick(t);
             }}
             className="mt-3 w-full accent-[var(--amber)]"
           />
@@ -870,4 +1404,5 @@ export function DemoReplayPlayer({ replay, mapName }: Props) {
       ) : null}
     </section>
   );
-}
+},
+);

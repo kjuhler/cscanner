@@ -120,6 +120,31 @@ export type DemoSummary = {
   highestCheatRiskPlayer: string | null;
 };
 
+export type HighlightKind =
+  | "execute_good"
+  | "execute_bad"
+  | "impact_play"
+  | "flash_chain"
+  | "trade"
+  | "clutch";
+
+export type CoachingHighlight = {
+  id: string;
+  kind: HighlightKind;
+  round: number;
+  tick: number;
+  title: string;
+  detail: string;
+  score: number;
+  actorSteamIds: string[];
+  focusSteamId?: string;
+  enemyBlinds?: number;
+  tags?: string[];
+  /** World coords for replay zoom focus. */
+  x?: number;
+  y?: number;
+};
+
 export type DemoAnalysis = {
   match: MatchMeta;
   players: PlayerStats[];
@@ -127,6 +152,7 @@ export type DemoAnalysis = {
   mistakes: Mistake[];
   summary: DemoSummary;
   replay: DemoReplay | null;
+  highlights: CoachingHighlight[];
 };
 
 /** Raw event row from demoparser2 (column names vary by event). */
@@ -158,6 +184,11 @@ export type ParsedDemo = {
   roundEnds: DemoEventRow[];
   roundMvps: DemoEventRow[];
   freezeTicks: DemoEventRow[];
+  bombPlanted: DemoEventRow[];
+  bombDefused: DemoEventRow[];
+  bombExploded: DemoEventRow[];
+  /** Tick samples at flash detonations for flash_duration / flash_max_alpha. */
+  flashTickSamples: DemoEventRow[];
   /** Sampled position/angle ticks for cheat heuristics + replay. */
   motionTicks: DemoEventRow[];
   /** Grenade trajectory samples from demoparser2 parseGrenades. */
@@ -192,6 +223,10 @@ export type ReplayBlind = {
   /** Flash duration from the game event (seconds-ish / raw value). */
   duration: number;
   team: number;
+  /** Peak flash alpha 0–255 from tick data when available. */
+  maxAlpha?: number;
+  /** Estimated blind intensity 0–1 (from maxAlpha or duration). */
+  blindPercent?: number;
 };
 
 export type ReplayEvent = {
@@ -220,6 +255,17 @@ export type ReplayEvent = {
   throwTick?: number;
 };
 
+export type ReplayBombEvent = {
+  round: number;
+  tick: number;
+  kind: "planted" | "defused" | "exploded";
+  x: number;
+  y: number;
+  /** Planting team (2 = T, 3 = CT). */
+  team?: number;
+  siteZoneId?: string;
+};
+
 export type ReplayRound = {
   round: number;
   startTick: number;
@@ -228,6 +274,11 @@ export type ReplayRound = {
   winnerTeam?: number;
   /** SteamID of round MVP, if known. */
   mvpSteamId?: string;
+  freezeEndTick?: number;
+  plantTick?: number;
+  plantZoneId?: string;
+  bombDefused?: boolean;
+  bombExploded?: boolean;
 };
 
 export type DemoReplay = {
@@ -239,4 +290,5 @@ export type DemoReplay = {
   frames: ReplayFrame[];
   events: ReplayEvent[];
   rounds: ReplayRound[];
+  bombEvents?: ReplayBombEvent[];
 };

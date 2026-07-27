@@ -7,12 +7,17 @@ import {
   str,
   tickOf,
 } from "./helpers";
+import {
+  collectFlashBlinds,
+  mergeTickAlphaIntoBlinds,
+} from "./flashBlinds";
+import { zoneAt } from "./zones";
 import type {
   DemoEventRow,
   DemoReplay,
   ParsedDemo,
   PlayerStats,
-  ReplayBlind,
+  ReplayBombEvent,
   ReplayEvent,
   ReplayEventKind,
   ReplayFrame,
@@ -93,8 +98,17 @@ function winnerTeamOf(row: DemoEventRow): number | undefined {
   return undefined;
 }
 
-function buildRounds(demo: ParsedDemo, endTick: number): ReplayRound[] {
+function buildRounds(
+  demo: ParsedDemo,
+  endTick: number,
+  mapName: string,
+): ReplayRound[] {
   const starts = [...demo.roundStarts]
+    .map((r) => ({ round: roundOf(r), tick: tickOf(r) }))
+    .filter((r) => r.tick > 0)
+    .sort((a, b) => a.tick - b.tick);
+
+  const freezeEnds = [...demo.roundFreezeEnds]
     .map((r) => ({ round: roundOf(r), tick: tickOf(r) }))
     .filter((r) => r.tick > 0)
     .sort((a, b) => a.tick - b.tick);
@@ -121,6 +135,23 @@ function buildRounds(demo: ParsedDemo, endTick: number): ReplayRound[] {
     return [{ round: 1, startTick: 0, endTick }];
   }
 
+  const plantsByRound = new Map<number, { tick: number; x: number; y: number }>();
+  for (const row of demo.bombPlanted) {
+    const round = roundOf(row);
+    const tick = tickOf(row);
+    if (round <= 0 || tick <= 0) continue;
+    const x = num(row, "x", "X");
+    const y = num(row, "y", "Y");
+    plantsByRound.set(round, { tick, x, y });
+  }
+
+  const defusedRounds = new Set(
+    demo.bombDefused.map((r) => roundOf(r)).filter((n) => n > 0),
+  );
+  const explodedRounds = new Set(
+    demo.bombExploded.map((r) => roundOf(r)).filter((n) => n > 0),
+  );
+
   const rounds: ReplayRound[] = [];
   for (let i = 0; i < starts.length; i++) {
     const start = starts[i]!;
@@ -132,12 +163,28 @@ function buildRounds(demo: ParsedDemo, endTick: number): ReplayRound[] {
       endFromEvent?.tick ?? nextStart?.tick ?? endTick;
     const roundNum = start.round || i + 1;
     const winnerTeam = endFromEvent?.winner;
+
+    const freezeEnd = freezeEnds.find(
+      (f) =>
+        f.round === roundNum ||
+        (f.tick > start.tick && (!nextStart || f.tick < nextStart.tick)),
+    );
+    const plant = plantsByRound.get(roundNum);
+    const plantZone = plant
+      ? zoneAt(mapName, plant.x, plant.y)
+      : null;
+
     rounds.push({
       round: roundNum,
       startTick: start.tick,
       endTick: Math.max(start.tick + 1, endTickRound),
       winnerTeam,
       mvpSteamId: mvpsByRound.get(roundNum),
+      freezeEndTick: freezeEnd?.tick,
+      plantTick: plant?.tick,
+      plantZoneId: plantZone?.id,
+      bombDefused: defusedRounds.has(roundNum),
+      bombExploded: explodedRounds.has(roundNum),
     });
   }
   return rounds;
@@ -340,44 +387,6 @@ function matchFlight(
   return best;
 }
 
-function collectFlashBlinds(
-  demo: ParsedDemo,
-  flashTick: number,
-  throwerId: string | undefined,
-  tickRate: number,
-  teamById: Map<string, number>,
-): ReplayBlind[] {
-  const window = Math.max(8, Math.round(tickRate * 0.35));
-  const blinds: ReplayBlind[] = [];
-  const seen = new Set<string>();
-
-  for (const row of demo.blinds) {
-    const t = tickOf(row);
-    if (Math.abs(t - flashTick) > window) continue;
-
-    const attackerId = steamIdOf(row, "attacker");
-    if (throwerId && attackerId && attackerId !== throwerId) continue;
-
-    const victimId = steamIdOf(row, "user");
-    if (!victimId || victimId === throwerId || seen.has(victimId)) continue;
-
-    const duration = num(row, "blind_duration", "flash_duration", "duration");
-    // Skip tiny self-flash noise
-    if (duration > 0 && duration < 0.3) continue;
-
-    seen.add(victimId);
-    blinds.push({
-      steamId: victimId,
-      name: nameOf(row, "user") || victimId,
-      duration: duration || 1,
-      team: teamById.get(victimId) ?? 0,
-    });
-  }
-
-  blinds.sort((a, b) => b.duration - a.duration);
-  return blinds;
-}
-
 function collectNadeDamage(
   demo: ParsedDemo,
   kind: "he" | "molotov",
@@ -468,6 +477,9 @@ export function buildReplay(
 
   const teamById = new Map(
     [...rosterMap.values()].map((p) => [p.steamId, p.team]),
+  );
+  const nameById = new Map(
+    [...rosterMap.values()].map((p) => [p.steamId, p.name]),
   );
 
   const flights = buildGrenadeFlights(demo.grenadeTrajectories);
@@ -619,12 +631,20 @@ export function buildReplay(
       };
 
       if (kind === "flash") {
+        const thrower = throwerId || flight?.steamId;
         event.blinds = collectFlashBlinds(
           demo,
           tick,
-          throwerId || flight?.steamId,
+          thrower,
           tickRate,
           teamById,
+          nameById,
+        );
+        event.blinds = mergeTickAlphaIntoBlinds(
+          demo,
+          tick,
+          event.blinds,
+          tickRate,
         );
         const maxBlindSec = event.blinds.reduce(
           (m, b) => Math.max(m, b.duration),
@@ -655,7 +675,53 @@ export function buildReplay(
 
   events.sort((a, b) => a.tick - b.tick);
 
-  const rounds = buildRounds(demo, endTick);
+  const rounds = buildRounds(demo, endTick, mapName);
+
+  const bombEvents: ReplayBombEvent[] = [];
+  for (const row of demo.bombPlanted) {
+    const round = roundOf(row);
+    const tick = tickOf(row);
+    if (round <= 0 || tick <= 0) continue;
+    const x = num(row, "x", "X");
+    const y = num(row, "y", "Y");
+    const zone = zoneAt(mapName, x, y);
+    bombEvents.push({
+      round,
+      tick,
+      kind: "planted",
+      x,
+      y,
+      team: 2,
+      siteZoneId: zone?.id,
+    });
+  }
+  for (const row of demo.bombDefused) {
+    const round = roundOf(row);
+    const tick = tickOf(row);
+    if (round <= 0 || tick <= 0) continue;
+    bombEvents.push({
+      round,
+      tick,
+      kind: "defused",
+      x: num(row, "x", "X"),
+      y: num(row, "y", "Y"),
+      team: 3,
+    });
+  }
+  for (const row of demo.bombExploded) {
+    const round = roundOf(row);
+    const tick = tickOf(row);
+    if (round <= 0 || tick <= 0) continue;
+    bombEvents.push({
+      round,
+      tick,
+      kind: "exploded",
+      x: num(row, "x", "X"),
+      y: num(row, "y", "Y"),
+      team: 2,
+    });
+  }
+  bombEvents.sort((a, b) => a.tick - b.tick);
 
   // Recompute molly damage with final duration window.
   for (const ev of events) {
@@ -679,5 +745,6 @@ export function buildReplay(
     frames,
     events,
     rounds,
+    bombEvents,
   };
 }

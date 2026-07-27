@@ -137,11 +137,24 @@ export function computePlayerStats(
     }
   }
 
+  const teamById = new Map<string, number>();
+  for (const p of demo.playerInfo) {
+    const sid = normalizeSteamId(p.steamid);
+    if (sid && typeof p.team_number === "number") {
+      teamById.set(sid, p.team_number);
+    }
+  }
+  for (const [, acc] of byId) {
+    if (acc.team > 0) teamById.set(acc.steamId, acc.team);
+  }
+
   for (const row of demo.blinds) {
     const attackerId = steamIdOf(row, "attacker");
     const victimId = steamIdOf(row, "user");
     if (!attackerId || !victimId || attackerId === victimId) continue;
-    // Approximate enemies: different steam ids; team check via freeze ticks if available.
+    const attackerTeam = teamById.get(attackerId) ?? 0;
+    const victimTeam = teamById.get(victimId) ?? 0;
+    if (attackerTeam > 0 && victimTeam > 0 && attackerTeam === victimTeam) continue;
     ensure(byId, attackerId, nameOf(row, "attacker")).enemiesFlashed += 1;
   }
 

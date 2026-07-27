@@ -1,6 +1,7 @@
 import { analyzeCheating } from "./cheating";
 import { buildReplay } from "./buildReplay";
 import { analyzeEconomy } from "./economy";
+import { buildCoachingHighlights } from "./highlights";
 import { analyzeOpeningAndTrades } from "./opening";
 import { parseDemoFile, type ParseProgressFn } from "./parse";
 import { computePlayerStats, countRounds } from "./stats";
@@ -159,6 +160,8 @@ export function analyzeDemo(
 
   report("replay", "Building radar replay…", 92);
   const replay = buildReplay(demo, players, mapName, tickRate);
+  report("replay", "Finding coaching highlights…", 96);
+  const highlights = buildCoachingHighlights(replay, players);
   report("replay", "Almost done…", 98);
 
   return {
@@ -168,6 +171,7 @@ export function analyzeDemo(
     mistakes,
     summary: buildSummary(mistakes, cheatScores),
     replay,
+    highlights,
   };
 }
 

@@ -19,6 +19,7 @@ export function normalizeAnalysis(data: DemoAnalysis): DemoAnalysis {
     ...data,
     cheatScores: data.cheatScores ?? [],
     replay: data.replay ?? null,
+    highlights: data.highlights ?? [],
     summary: {
       ...data.summary,
       cheatSignals: data.summary.cheatSignals ?? 0,

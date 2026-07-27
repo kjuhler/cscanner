@@ -74,6 +74,21 @@ export async function createDemoRun(
   };
 }
 
+export async function updateDemoRun(
+  runId: string,
+  analysis: DemoAnalysis,
+): Promise<DemoRunRecord | null> {
+  const existing = await readDemoRun(runId);
+  if (!existing) return null;
+
+  const record: DemoRunRecord = {
+    ...existing,
+    analysis,
+  };
+  await writeFile(runFilePath(runId), JSON.stringify(record));
+  return record;
+}
+
 export async function readDemoRun(
   runId: string,
 ): Promise<DemoRunRecord | null> {
