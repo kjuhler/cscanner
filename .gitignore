@@ -35,6 +35,9 @@ yarn-error.log*
 # local demo upload / job data (DATA_DIR default)
 .data/
 
+# large raw demo files — use pre-analyzed JSON in public/demo/ instead
+public/demo/*.dem
+
 # vercel
 .vercel
 

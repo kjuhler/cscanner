@@ -59,7 +59,9 @@ pnpm run dev
 Open [http://localhost:3000](http://localhost:3000).
 
 Profile lookup and share-code analyze work without Redis.  
-Accepted input formats:
+On `/demo`, paste a share code to start a new review. Shared rundowns live at `/demo/r/{runId}` (24h). The bundled example is at `/demo/example`.
+
+Accepted share-code input formats:
 - plain `CSGO-XXXXX-XXXXX-XXXXX-XXXXX-XXXXX`
 - full Steam copy URI (auto-extracted), e.g.  
   `steam://rungame/730/76561202255233023/+csgo_download_match%20CSGO-2yW29-RRKYm-j7wje-Yn9oc-4YKsE`

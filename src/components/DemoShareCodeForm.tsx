@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { normalizeShareCode } from "@/lib/demo/shareCode";
+import type { DemoLinkSource } from "@/lib/demo/demoLink";
 
 type Props = {
-  onAnalyzed: (data: unknown) => void;
+  onAnalyzed: (data: unknown, source: DemoLinkSource) => void;
   disabled?: boolean;
 };
 
@@ -222,7 +224,10 @@ export function DemoShareCodeForm({ onAnalyzed, disabled }: Props) {
         throw new Error(data.error || `Analyze failed (${res.status})`);
       }
 
-      onAnalyzed(data.result);
+      onAnalyzed(data.result, {
+        type: "code",
+        shareCode: normalizeShareCode(code),
+      });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Share-code analyze failed.";
