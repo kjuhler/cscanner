@@ -12,11 +12,20 @@ import type {
 import { DemoRadarScene } from "@/components/DemoRadarScene";
 import { DemoReplayPlayer } from "@/components/DemoReplayPlayer";
 import { DemoReviewGuide } from "@/components/DemoReviewGuide";
+import { buildPlayerCoachingTips } from "@/lib/demo/coaching";
 import { buildDemoWatchCommand } from "@/lib/demo/watchCommand";
+import { buildDemoUrl } from "@/lib/demo/demoLink";
+import type { DemoLinkSource } from "@/lib/demo/demoLink";
+import { PlayerCoachingPanel } from "@/components/PlayerCoachingPanel";
 import { StatsGrid } from "@/components/StatsGrid";
 
 type Props = {
   analysis: DemoAnalysis;
+  linkSource?: DemoLinkSource | null;
+  runId?: string | null;
+  expiresAt?: number | null;
+  initialFocusId?: string;
+  onFocusChange?: (playerId: string) => void;
   onReset: () => void;
 };
 
@@ -74,13 +83,73 @@ function cheatCategoryOf(m: Mistake): CheatCategory | "all" {
   return "wall";
 }
 
-export function DemoResults({ analysis, onReset }: Props) {
-  const [focusId, setFocusId] = useState<string>("all");
+export function DemoResults({
+  analysis,
+  linkSource,
+  runId,
+  expiresAt,
+  initialFocusId = "all",
+  onFocusChange,
+  onReset,
+}: Props) {
+  const [focusId, setFocusId] = useState<string>(initialFocusId);
   const [susCategory, setSusCategory] = useState<"all" | CheatCategory>("all");
   const [copiedMoments, setCopiedMoments] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   const [playerContext, setPlayerContext] = useState<Map<string, PlayerContext>>(
     () => new Map(),
   );
+
+  useEffect(() => {
+    setFocusId(initialFocusId);
+  }, [initialFocusId]);
+
+  const setPlayerFocus = (playerId: string) => {
+    setFocusId(playerId);
+    onFocusChange?.(playerId);
+  };
+
+  const shareUrl =
+    linkSource != null
+      ? buildDemoUrl(linkSource, focusId === "all" ? null : focusId)
+      : null;
+
+  const copyShareLink = async () => {
+    if (!shareUrl) return;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 1600);
+    } catch {
+      // ignore clipboard failures
+    }
+  };
+
+  const downloadJson = () => {
+    if (runId) {
+      window.location.href = `/api/demo/run/${encodeURIComponent(runId)}/export`;
+      return;
+    }
+    const safeMap = analysis.match.mapName.replace(/[^a-zA-Z0-9_-]+/g, "-");
+    const filename = `cscanner-${safeMap || "demo"}.json`;
+    const body = JSON.stringify({ analysis }, null, 2);
+    const blob = new Blob([body], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const expiryLabel = useMemo(() => {
+    if (!expiresAt) return null;
+    const remainingMs = expiresAt - Date.now();
+    if (remainingMs <= 0) return "Link expired";
+    const hours = Math.ceil(remainingMs / (60 * 60 * 1000));
+    if (hours <= 1) return "Link expires in less than 1 hour";
+    return `Link expires in ~${hours} hours`;
+  }, [expiresAt]);
 
   const focusedPlayer = useMemo(
     () =>
@@ -157,6 +226,24 @@ export function DemoResults({ analysis, onReset }: Props) {
 
   const { match, players, summary } = analysis;
   const mapName = match.mapName;
+
+  const coachingTips = useMemo(() => {
+    if (!focusedPlayer) return [];
+    const ctx = playerContext.get(focusId);
+    return buildPlayerCoachingTips({
+      player: focusedPlayer,
+      mistakes: analysis.mistakes,
+      rounds: match.rounds,
+      leetify: ctx?.leetify ?? null,
+      steam: ctx?.steam ?? null,
+    });
+  }, [
+    analysis.mistakes,
+    focusId,
+    focusedPlayer,
+    match.rounds,
+    playerContext,
+  ]);
 
   const findingsItems = useMemo(() => {
     if (focusId === "all") {
@@ -355,15 +442,34 @@ export function DemoResults({ analysis, onReset }: Props) {
           <p className="mt-1 text-sm text-[var(--muted)]">
             {match.rounds} rounds
             {match.tickRate ? ` · ${match.tickRate} tick` : ""}
+            {expiryLabel ? ` · ${expiryLabel}` : null}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onReset}
-          className="border border-[var(--border)] bg-[var(--bg-elevated)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--foreground)] hover:border-[var(--amber)]/60"
-        >
-          Analyze another
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={downloadJson}
+            className="border border-[var(--border)] bg-[var(--bg-elevated)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--foreground)] hover:border-[var(--amber)]/60"
+          >
+            Download JSON
+          </button>
+          {shareUrl ? (
+            <button
+              type="button"
+              onClick={() => void copyShareLink()}
+              className="border border-[var(--border)] bg-[var(--bg-elevated)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--foreground)] hover:border-[var(--amber)]/60"
+            >
+              {copiedLink ? "Link copied" : "Copy link"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onReset}
+            className="border border-[var(--border)] bg-[var(--bg-elevated)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--foreground)] hover:border-[var(--amber)]/60"
+          >
+            Analyze another
+          </button>
+        </div>
       </div>
 
       {analysis.replay && analysis.replay.frames.length > 1 ? (
@@ -386,7 +492,7 @@ export function DemoResults({ analysis, onReset }: Props) {
           Player
           <select
             value={focusId}
-            onChange={(e) => setFocusId(e.target.value)}
+            onChange={(e) => setPlayerFocus(e.target.value)}
             className="min-w-[10rem] border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-1.5 text-sm text-[var(--foreground)]"
           >
             <option value="all">All players</option>
@@ -410,8 +516,15 @@ export function DemoResults({ analysis, onReset }: Props) {
         focusId={focusId}
         cheatById={cheatById}
         contextById={playerContext}
-        onViewPlayer={setFocusId}
+        onViewPlayer={setPlayerFocus}
       />
+
+      {focusedPlayer ? (
+        <PlayerCoachingPanel
+          playerName={focusedPlayer.name}
+          tips={coachingTips}
+        />
+      ) : null}
 
       {displayCheatScores.length > 0 ? (
         <CheatScoreTable

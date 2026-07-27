@@ -18,6 +18,7 @@ import {
 } from "./analyzeQueueTypes";
 import { runAnalyzeShareCodeJob } from "./runAnalyzeShareCodeJob";
 import { runAnalyzeUploadJob } from "./runAnalyzeUploadJob";
+import { sweepExpiredDemoRuns } from "./demoRun";
 
 const WORKER_HEARTBEAT_KEY = "analyze:worker:heartbeat";
 
@@ -158,6 +159,13 @@ async function runDaemon(): Promise<void> {
 
   await waitForRedis(url);
   console.info(`[analyze-worker] redis ok`);
+
+  void sweepExpiredDemoRuns().catch((err) => {
+    console.error(
+      "[analyze-worker] demo run sweep failed",
+      err instanceof Error ? err.message : err,
+    );
+  });
 
   const heartbeat = createConnection(url);
   const beat = async () => {

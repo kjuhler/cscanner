@@ -26,6 +26,10 @@ export function resultsRoot(): string {
   return ensureDataSubdir("results");
 }
 
+export function runsRoot(): string {
+  return ensureDataSubdir("runs");
+}
+
 export function demosRoot(): string {
   return ensureDataSubdir("demos");
 }
