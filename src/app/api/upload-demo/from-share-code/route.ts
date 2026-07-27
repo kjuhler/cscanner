@@ -15,7 +15,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "Share-code demo fetch is not enabled. Set STEAM_GC_ENABLED=true on the web service and STEAM_REFRESH_TOKEN on the analyze worker.",
+            "Share-code demo fetch is not enabled. Set STEAM_GC_ENABLED=true and STEAM_REFRESH_TOKEN on the web service.",
         },
         { status: 503 },
       );

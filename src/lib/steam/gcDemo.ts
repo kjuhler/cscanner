@@ -1,6 +1,6 @@
 /**
  * Steam Game Coordinator client for resolving CS2 match share codes to demo URLs.
- * Worker-only — do not import from Next.js route handlers.
+ * Server-only — loaded dynamically from the share-code API route.
  */
 import GlobalOffensive from "globaloffensive";
 import SteamUser from "steam-user";
@@ -39,7 +39,7 @@ function refreshToken(): string {
   const token = process.env.STEAM_REFRESH_TOKEN?.trim();
   if (!token) {
     throw new Error(
-      "STEAM_REFRESH_TOKEN is not set. Generate one (see README) and set it on the analyze worker.",
+      "STEAM_REFRESH_TOKEN is not set. Generate one (see README) and set it on the web service (or local .env).",
     );
   }
   return token;

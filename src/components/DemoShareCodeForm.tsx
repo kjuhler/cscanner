@@ -248,7 +248,7 @@ export function DemoShareCodeForm({ onAnalyzed, disabled }: Props) {
           <span className="font-[family-name:var(--font-code)] text-[var(--foreground)]">
             STEAM_REFRESH_TOKEN
           </span>{" "}
-          on the analyze worker (see README).
+          on the web service (see README).
         </p>
       </div>
     );

@@ -26,8 +26,9 @@ services:
       STEAM_API_KEY: ${STEAM_API_KEY}
       FACEIT_API_KEY: ${FACEIT_API_KEY:-}
       LEETIFY_API_KEY: ${LEETIFY_API_KEY:-}
-      # Advertise share-code UI/API (GC work runs on worker with STEAM_REFRESH_TOKEN).
+      # Share-code GC fetch runs in the web process (direct analyze route).
       STEAM_GC_ENABLED: ${STEAM_GC_ENABLED:-}
+      STEAM_REFRESH_TOKEN: ${STEAM_REFRESH_TOKEN:-}
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
       PORT: "3000"
