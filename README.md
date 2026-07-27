@@ -99,7 +99,7 @@ Stack services:
 | `LEETIFY_API_KEY` | optional |
 | `ANALYZE_CONCURRENCY` | optional, default `1` |
 | `STEAM_GC_ENABLED` | optional — `true` to enable share-code UI on web |
-| `STEAM_REFRESH_TOKEN` | optional — worker-only Steam refresh token for share-code demos |
+| `STEAM_REFRESH_TOKEN` | required for share-code analyze (set on **web** service) |
 
 6. Deploy the stack. Open `http://<host>:3003`.
 
