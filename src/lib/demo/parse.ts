@@ -74,6 +74,14 @@ export function parseDemoFile(
   const hurts = asRows(
     parseEvent(path, "player_hurt", [], ["total_rounds_played"]),
   );
+  let weaponFires: DemoEventRow[] = [];
+  try {
+    weaponFires = asRows(
+      parseEvent(path, "weapon_fire", [], ["total_rounds_played", "round"]),
+    );
+  } catch {
+    weaponFires = [];
+  }
 
   report("Parsing utility events…", 25);
   const blinds = asRows(
@@ -126,7 +134,11 @@ export function parseDemoFile(
     parseEvent(path, "round_freeze_end", [], ["total_rounds_played"]),
   );
   const roundEnds = asRows(
-    parseEvent(path, "round_end", [], ["total_rounds_played"]),
+    parseEvent(path, "round_end", [], [
+      "total_rounds_played",
+      "t_score",
+      "ct_score",
+    ]),
   );
   let roundMvps: DemoEventRow[] = [];
   try {
@@ -199,6 +211,7 @@ export function parseDemoFile(
     playerInfo,
     deaths,
     hurts,
+    weaponFires,
     blinds,
     flashDetonates,
     heDetonates,

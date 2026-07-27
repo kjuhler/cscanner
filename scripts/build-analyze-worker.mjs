@@ -30,8 +30,16 @@ await esbuild.build({
   alias: {
     "server-only": join(root, "stubs/server-only.cjs"),
   },
-  // Keep native demoparser external; BullMQ/ioredis are bundled into the worker.
-  external: ["@laihoe/demoparser2", "@laihoe/demoparser2-*"],
+  // Keep native demoparser + Steam GC packages external (steam-user loads
+  // system.pem via __dirname; bundling breaks that). Docker copies GC deps
+  // into /app/gc_node_modules and sets NODE_PATH.
+  external: [
+    "@laihoe/demoparser2",
+    "@laihoe/demoparser2-*",
+    "steam-user",
+    "globaloffensive",
+    "csgo-sharecode",
+  ],
   plugins: [
     {
       name: "at-alias",

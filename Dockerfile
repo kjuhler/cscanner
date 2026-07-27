@@ -15,6 +15,15 @@ COPY package.json pnpm-lock.yaml ./
 ENV NODE_ENV=
 RUN pnpm install --frozen-lockfile --prod=false
 
+# Classic nested node_modules for Steam GC (analyze-worker requires these
+# at runtime; Next standalone does not include them).
+FROM node:22-alpine AS gc-deps
+WORKDIR /app/gc
+RUN npm install --omit=dev \
+  steam-user@5.3.0 \
+  globaloffensive@3.3.0 \
+  csgo-sharecode@5.0.0
+
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -35,6 +44,8 @@ ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 ENV DATA_DIR=/data
 ENV ANALYZE_WORKER_PATH=/app/analyze-worker.cjs
+# Steam GC packages for analyze-worker (external requires).
+ENV NODE_PATH=/app/gc_node_modules
 
 RUN apk add --no-cache libc6-compat \
   && addgroup --system --gid 1001 nodejs \
@@ -47,6 +58,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # Bundled analyze worker (BullMQ consumer + demoparser).
 COPY --from=builder --chown=nextjs:nodejs /app/analyze-worker.cjs ./analyze-worker.cjs
+COPY --from=gc-deps --chown=nextjs:nodejs /app/gc/node_modules ./gc_node_modules
 
 # Replace any traced @laihoe stubs with the full native package tree (musl).
 USER root

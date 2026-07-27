@@ -26,6 +26,8 @@ services:
       STEAM_API_KEY: ${STEAM_API_KEY}
       FACEIT_API_KEY: ${FACEIT_API_KEY:-}
       LEETIFY_API_KEY: ${LEETIFY_API_KEY:-}
+      # Advertise share-code UI/API (GC work runs on worker with STEAM_REFRESH_TOKEN).
+      STEAM_GC_ENABLED: ${STEAM_GC_ENABLED:-}
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
       PORT: "3000"
@@ -51,6 +53,8 @@ services:
       DATA_DIR: /data
       ANALYZE_CONCURRENCY: ${ANALYZE_CONCURRENCY:-1}
       ANALYZE_WORKER_PATH: /app/analyze-worker.cjs
+      # Steam GC bot for match share-code → demo download (never put on web).
+      STEAM_REFRESH_TOKEN: ${STEAM_REFRESH_TOKEN:-}
       # Demoparser + large demos need headroom; OOM kills show up as failed jobs.
       NODE_OPTIONS: "--max-old-space-size=4096"
     volumes:

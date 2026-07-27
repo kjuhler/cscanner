@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { DemoResults } from "@/components/DemoResults";
-import { DemoUploadForm } from "@/components/DemoUploadForm";
+import { DemoShareCodeForm } from "@/components/DemoShareCodeForm";
 import { SiteHeader } from "@/components/SiteHeader";
 import type { DemoAnalysis } from "@/lib/demo";
 
@@ -35,6 +35,10 @@ function normalizeAnalysis(data: DemoAnalysis): DemoAnalysis {
 export default function DemoPage() {
   const [analysis, setAnalysis] = useState<DemoAnalysis | null>(null);
 
+  const onAnalyzed = (data: unknown) => {
+    if (isDemoAnalysis(data)) setAnalysis(normalizeAnalysis(data));
+  };
+
   return (
     <>
       <SiteHeader />
@@ -43,13 +47,13 @@ export default function DemoPage() {
           Demo lab
         </p>
         <h1 className="mt-3 max-w-2xl font-[family-name:var(--font-display)] text-3xl font-bold leading-tight tracking-tight text-[var(--foreground)] sm:text-5xl">
-          Upload a CS2 demo
+          Analyze a CS2 match
         </h1>
         <p className="mt-3 max-w-xl text-sm leading-relaxed text-[var(--muted)] sm:text-base">
-          Parse a <span className="text-[var(--foreground)]">.dem</span> or{" "}
-          <span className="text-[var(--foreground)]">.dem.bz2</span> file on
-          the server — radar replay, economy/trade/utility review, and
-          cheat-signal heuristics.
+          Paste a Valve match sharing code (plain <span className="text-[var(--foreground)]">CSGO-…</span> or full
+          <span className="text-[var(--foreground)]"> steam://...</span> copy).
+          We fetch the replay from Steam and run radar replay, economy/trade/utility
+          review, and cheat-signal heuristics.
         </p>
 
         <div className="mt-8">
@@ -59,11 +63,7 @@ export default function DemoPage() {
               onReset={() => setAnalysis(null)}
             />
           ) : (
-            <DemoUploadForm
-              onAnalyzed={(data) => {
-                if (isDemoAnalysis(data)) setAnalysis(normalizeAnalysis(data));
-              }}
-            />
+            <DemoShareCodeForm onAnalyzed={onAnalyzed} />
           )}
         </div>
       </main>

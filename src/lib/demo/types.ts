@@ -7,6 +7,8 @@ export type MistakeType =
 
 export type MistakeSeverity = "info" | "warn" | "danger";
 
+export type CheatCategory = "wall" | "aim" | "context";
+
 export type SceneMarkerRole =
   | "victim"
   | "attacker"
@@ -40,6 +42,8 @@ export type Mistake = {
   type: MistakeType;
   message: string;
   severity: MistakeSeverity;
+  /** Cheat signal grouping for demo review UI. */
+  cheatCategory?: CheatCategory;
   /** Optional related players (e.g. teammates who should have traded). */
   relatedSteamIds?: string[];
   scene?: EventScene;
@@ -72,8 +76,26 @@ export type PlayerCheatScore = {
   wallLookScore: number;
   wallLookSamples: number;
   preAimFlags: number;
+  /** Repeated quick switches between different occluded targets. */
+  wallTrackRotations: number;
+  /** Pre-fight target locks with low scan variance while enemies are around. */
+  selectiveClearFlags: number;
+  /** Early-round hidden-target locks before first engagement. */
+  infoRotateFlags: number;
   rageSnaps: number;
   spinbotFlags: number;
+  /** Damage on smoked victims without plausible info cues. */
+  smokeSpamFlags: number;
+  /** Shots fired within a few ticks of target becoming visible. */
+  triggerFlags: number;
+  /** Multi-kill jumps between occluded targets. */
+  transferFlags: number;
+  /** Overly uniform spray compensation during long bursts. */
+  rcsFlags: number;
+  /** Mid-round 180° checks on hidden lurkers. */
+  lurkerCheckFlags: number;
+  /** Cheat signals clustered when team is down big. */
+  momentumFlags: number;
   /** Combined 0–100 risk from demo heuristics only. */
   cheatRisk: number;
 };
@@ -123,6 +145,7 @@ export type ParsedDemo = {
   }>;
   deaths: DemoEventRow[];
   hurts: DemoEventRow[];
+  weaponFires: DemoEventRow[];
   blinds: DemoEventRow[];
   flashDetonates: DemoEventRow[];
   heDetonates: DemoEventRow[];

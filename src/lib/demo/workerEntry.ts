@@ -1,6 +1,8 @@
 /**
  * Long-running BullMQ consumer for demo analyze jobs.
- * Also supports one-shot: node analyze-worker.cjs --once <jobId> <uploadId> <fileName> <chunks>
+ * Also supports one-shot:
+ *   node analyze-worker.cjs --once <jobId> <uploadId> <fileName> <chunks>
+ *   node analyze-worker.cjs --once-share <jobId> <shareCode>
  */
 import { Worker } from "bullmq";
 import Redis from "ioredis";
@@ -10,8 +12,11 @@ import {
 } from "./analyzeJob";
 import {
   ANALYZE_QUEUE_NAME,
+  asUploadPayload,
+  isShareCodePayload,
   type AnalyzeQueuePayload,
 } from "./analyzeQueueTypes";
+import { runAnalyzeShareCodeJob } from "./runAnalyzeShareCodeJob";
 import { runAnalyzeUploadJob } from "./runAnalyzeUploadJob";
 
 const WORKER_HEARTBEAT_KEY = "analyze:worker:heartbeat";
@@ -61,6 +66,27 @@ async function waitForRedis(url: string): Promise<void> {
   }
 }
 
+async function processPayload(payload: AnalyzeQueuePayload): Promise<void> {
+  await createAnalyzeJob(payload.jobId);
+  if (isShareCodePayload(payload)) {
+    await runAnalyzeShareCodeJob({
+      jobId: payload.jobId,
+      shareCode: payload.shareCode,
+    });
+    return;
+  }
+  const upload = asUploadPayload(payload);
+  if (!upload) {
+    throw new Error("Invalid analyze job payload.");
+  }
+  await runAnalyzeUploadJob({
+    jobId: upload.jobId,
+    uploadId: upload.uploadId,
+    fileName: upload.fileName,
+    totalChunks: upload.totalChunks,
+  });
+}
+
 async function runOnce(args: string[]): Promise<void> {
   const [jobId, uploadId, fileName, totalChunksStr] = args;
   if (!jobId || !uploadId || !fileName || !totalChunksStr) {
@@ -75,7 +101,6 @@ async function runOnce(args: string[]): Promise<void> {
     process.exit(2);
   }
 
-  // One-shot does not need Redis for BullMQ, but status writes go to Redis.
   const url = redisUrl();
   try {
     await waitForRedis(url);
@@ -89,12 +114,37 @@ async function runOnce(args: string[]): Promise<void> {
   console.info(
     `[analyze-worker] once job=${jobId} upload=${uploadId} file=${fileName} chunks=${totalChunks}`,
   );
-  await createAnalyzeJob(jobId);
-  await runAnalyzeUploadJob({
+  await processPayload({
+    kind: "upload",
     jobId,
     uploadId,
     fileName,
     totalChunks,
+  });
+}
+
+async function runOnceShare(args: string[]): Promise<void> {
+  const [jobId, shareCode] = args;
+  if (!jobId || !shareCode) {
+    console.error("Usage: analyze-worker --once-share <jobId> <shareCode>");
+    process.exit(2);
+  }
+
+  const url = redisUrl();
+  try {
+    await waitForRedis(url);
+  } catch (err) {
+    console.warn(
+      "[analyze-worker] redis check failed (status updates may fail):",
+      err instanceof Error ? err.message : err,
+    );
+  }
+
+  console.info(`[analyze-worker] once-share job=${jobId}`);
+  await processPayload({
+    kind: "shareCode",
+    jobId,
+    shareCode,
   });
 }
 
@@ -103,7 +153,7 @@ async function runDaemon(): Promise<void> {
   const conc = concurrency();
 
   console.info(
-    `[analyze-worker] starting queue=${ANALYZE_QUEUE_NAME} concurrency=${conc} dataDir=${process.env.DATA_DIR || ".data"}`,
+    `[analyze-worker] starting queue=${ANALYZE_QUEUE_NAME} concurrency=${conc} dataDir=${process.env.DATA_DIR || ".data"} gc=${process.env.STEAM_REFRESH_TOKEN ? "token-set" : "off"}`,
   );
 
   await waitForRedis(url);
@@ -127,17 +177,17 @@ async function runDaemon(): Promise<void> {
   const worker = new Worker<AnalyzeQueuePayload>(
     ANALYZE_QUEUE_NAME,
     async (job) => {
-      const { jobId, uploadId, fileName, totalChunks } = job.data;
-      console.info(
-        `[analyze-worker] job=${jobId} upload=${uploadId} file=${fileName} chunks=${totalChunks}`,
-      );
-      await createAnalyzeJob(jobId);
-      await runAnalyzeUploadJob({
-        jobId,
-        uploadId,
-        fileName,
-        totalChunks,
-      });
+      const payload = job.data;
+      if (isShareCodePayload(payload)) {
+        console.info(
+          `[analyze-worker] job=${payload.jobId} kind=shareCode`,
+        );
+      } else {
+        console.info(
+          `[analyze-worker] job=${payload.jobId} kind=upload upload=${payload.uploadId} file=${payload.fileName}`,
+        );
+      }
+      await processPayload(payload);
     },
     {
       connection: createConnection(url),
@@ -195,6 +245,12 @@ async function main() {
   if (argv[0] === "--once") {
     await runOnce(argv.slice(1));
     console.info("[analyze-worker] once exit 0");
+    process.exit(0);
+    return;
+  }
+  if (argv[0] === "--once-share") {
+    await runOnceShare(argv.slice(1));
+    console.info("[analyze-worker] once-share exit 0");
     process.exit(0);
     return;
   }

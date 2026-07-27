@@ -13,7 +13,7 @@ Look up a Steam ID or profile URL to review K/D, win rate, HS%, Premier, FACEIT 
 - FACEIT ELO, HS%, map breakdown, recent matches (API key)
 - Leetify Premier, competitive map ranks, time to DMG, aim ratings
 - Heuristic cheating risk % with signal breakdown
-- Demo upload → background analyze (radar / timeline / cheat signals)
+- Match share code → direct analyze (radar / timeline / cheat signals)
 - Tracker sources hub: live vs link-only (CSStats, Scope.gg)
 - Outbound profiles: Leetify, CSStats, Scope.gg, FACEIT, Steam
 
@@ -36,30 +36,33 @@ cp .env.example .env.local
 | `STEAM_API_KEY` | [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey) |
 | `FACEIT_API_KEY` | [developers.faceit.com](https://developers.faceit.com/) |
 | `LEETIFY_API_KEY` | [leetify.com/app/developer](https://leetify.com/app/developer) (optional, higher rate limits) |
-| `REDIS_URL` | Local Redis — required for demo uploads (`redis://127.0.0.1:6379`) |
+| `REDIS_URL` | Optional (only for legacy upload queue flow) |
+| `STEAM_GC_ENABLED` | Optional — set `true` to show share-code fetch on `/demo` |
+| `STEAM_REFRESH_TOKEN` | Required for share-code analyze (Steam GC login token) |
 
-Steam is required. FACEIT is optional. Leetify works without a key for registered players, but a key raises rate limits. Scope/CSStats are link-only.
+Steam Web API key is required for profiles. FACEIT is optional. Leetify works without a key for registered players, but a key raises rate limits. Scope/CSStats are link-only.
 
-3. Start Redis (required for demo uploads / worker):
+**Match share codes:** Valve MM codes (`CSGO-…`) need a Steam Game Coordinator session — not the Web API key. Prefer a dedicated bot account. Generate a refresh token once:
 
 ```bash
-pnpm run dev:redis
+pnpm exec node scripts/steam-refresh-token.mjs
 ```
 
-Uses Docker when available, otherwise `redis-server` on PATH
-(Windows: `winget install taizod1024.redis-windows-fork`). Redis must listen
-on `127.0.0.1:6379`.
+Set `STEAM_REFRESH_TOKEN` and `STEAM_GC_ENABLED=true` (for local `.env.local` or web service env). Demos expire from Valve after ~30 days; FACEIT codes are not supported.
 
-4. In two terminals:
+3. Start app:
 
 ```bash
 pnpm run dev
-pnpm run dev:worker
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Uploads land in `.data/` (override with `DATA_DIR`). Profile lookup works without Redis; demo analyze needs Redis + worker.
+Profile lookup and share-code analyze work without Redis.  
+Accepted input formats:
+- plain `CSGO-XXXXX-XXXXX-XXXXX-XXXXX-XXXXX`
+- full Steam copy URI (auto-extracted), e.g.  
+  `steam://rungame/730/76561202255233023/+csgo_download_match%20CSGO-2yW29-RRKYm-j7wje-Yn9oc-4YKsE`
 
 ## Deploy (Portainer / GitHub)
 
@@ -69,9 +72,9 @@ Stack services:
 
 | Service | Role |
 |---------|------|
-| `web` | Next.js — profiles + chunk upload + enqueue |
-| `worker` | BullMQ consumer — demoparser / analyze |
-| `redis` | Job queue + live job status |
+| `web` | Next.js — profiles + share-code analyze |
+| `worker` | Optional legacy upload queue consumer |
+| `redis` | Optional legacy upload queue/status store |
 
 **Host port:** `3003` → web container `3000` (chosen because 3000–3002 are already used on the host).
 
@@ -95,6 +98,8 @@ Stack services:
 | `FACEIT_API_KEY` | optional |
 | `LEETIFY_API_KEY` | optional |
 | `ANALYZE_CONCURRENCY` | optional, default `1` |
+| `STEAM_GC_ENABLED` | optional — `true` to enable share-code UI on web |
+| `STEAM_REFRESH_TOKEN` | optional — worker-only Steam refresh token for share-code demos |
 
 6. Deploy the stack. Open `http://<host>:3003`.
 
