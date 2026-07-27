@@ -7,6 +7,8 @@ import type { DemoAnalysis } from "./types";
 
 export type AnalyzeJobStage =
   | "queued"
+  | "fetching"
+  | "downloading"
   | "assembling"
   | "decompressing"
   | "parsing"

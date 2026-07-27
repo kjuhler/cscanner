@@ -42,7 +42,13 @@ export async function POST(request: Request) {
     }
 
     const jobId = randomUUID();
-    const payload = { jobId, uploadId, fileName, totalChunks };
+    const payload = {
+      kind: "upload" as const,
+      jobId,
+      uploadId,
+      fileName,
+      totalChunks,
+    };
     await createAnalyzeJob(jobId);
 
     let workerAlive = false;

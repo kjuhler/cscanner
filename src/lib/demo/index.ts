@@ -10,6 +10,7 @@ export {
   worldToRadarPx,
 } from "./radar";
 export type {
+  CheatCategory,
   DemoAnalysis,
   DemoReplay,
   DemoSummary,

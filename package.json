@@ -16,11 +16,14 @@
   "dependencies": {
     "@laihoe/demoparser2": "^0.41.3",
     "bullmq": "^5.81.2",
+    "csgo-sharecode": "^5.0.0",
+    "globaloffensive": "^3.3.0",
     "ioredis": "^5.11.1",
     "next": "16.2.11",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "server-only": "^0.0.1",
+    "steam-user": "^5.3.0",
     "unbzip2-stream": "^1.4.3"
   },
   "devDependencies": {
@@ -28,6 +31,7 @@
     "@types/node": "^20.19.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "@types/steam-user": "^5.1.1",
     "@types/unbzip2-stream": "^1.4.3",
     "esbuild": "^0.25.5",
     "eslint": "^9.39.0",

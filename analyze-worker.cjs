@@ -4721,7 +4721,7 @@ var require_utils2 = __commonJS({
     exports2.isNotConnectionError = isNotConnectionError;
     exports2.removeUndefinedFields = removeUndefinedFields;
     exports2.trace = trace;
-    exports2.randomUUID = randomUUID2;
+    exports2.randomUUID = randomUUID3;
     var crypto_1 = require("crypto");
     var utils_1 = require_utils();
     var connection_closed_error_1 = require_connection_closed_error();
@@ -4991,7 +4991,7 @@ var require_utils2 = __commonJS({
         }
       }
     }
-    function randomUUID2() {
+    function randomUUID3() {
       if (typeof crypto_1.randomUUID === "function") {
         return (0, crypto_1.randomUUID)();
       }
@@ -45874,12 +45874,22 @@ async function writeAnalyzeJobResult(jobId, result) {
 
 // src/lib/demo/analyzeQueueTypes.ts
 var ANALYZE_QUEUE_NAME = "analyze";
+function isShareCodePayload(payload) {
+  return payload.kind === "shareCode";
+}
+function asUploadPayload(payload) {
+  if (payload.kind === "shareCode") return null;
+  if ("uploadId" in payload && "fileName" in payload && "totalChunks" in payload) {
+    return payload;
+  }
+  return null;
+}
 
-// src/lib/demo/runAnalyzeUploadJob.ts
-var import_server_only3 = __toESM(require_server_only());
+// src/lib/demo/runAnalyzeShareCodeJob.ts
+var import_server_only2 = __toESM(require_server_only());
 var import_node_crypto = require("node:crypto");
-var import_promises4 = require("node:fs/promises");
-var import_node_path3 = require("node:path");
+var import_promises3 = require("node:fs/promises");
+var import_node_path2 = require("node:path");
 
 // src/lib/demo/helpers.ts
 function str(row, ...keys) {
@@ -47576,11 +47586,46 @@ async function writeDemoTempFile(buffer, destPath, originalName) {
   }
 }
 
-// src/lib/demo/uploadSession.ts
-var import_server_only2 = __toESM(require_server_only());
-var import_node_fs3 = require("node:fs");
-var import_promises3 = require("node:fs/promises");
-var import_node_path2 = require("node:path");
+// src/lib/demo/shareCode.ts
+var import_csgo_sharecode = require("csgo-sharecode");
+var SHARE_CODE_RE = /^CSGO(-[A-Za-z0-9]{5}){5}$/;
+function normalizeShareCode(raw) {
+  let s = raw.trim();
+  const downloadMatch = s.match(/CSGO(-[A-Za-z0-9]{5}){5}/i);
+  if (downloadMatch) {
+    s = downloadMatch[0];
+  }
+  s = s.replace(/\s+/g, "");
+  if (s.toUpperCase().startsWith("CSGO-")) {
+    return "CSGO-" + s.slice(5);
+  }
+  return s;
+}
+function decodeShareCode(raw) {
+  const normalized = normalizeShareCode(raw);
+  if (!SHARE_CODE_RE.test(normalized)) {
+    throw new Error(
+      "Invalid match sharing code. Expected CSGO-XXXXX-XXXXX-XXXXX-XXXXX-XXXXX."
+    );
+  }
+  let info;
+  try {
+    info = (0, import_csgo_sharecode.decodeMatchShareCode)(normalized);
+  } catch (err) {
+    if (err instanceof import_csgo_sharecode.InvalidShareCode) {
+      throw new Error(
+        "Invalid match sharing code. Expected CSGO-XXXXX-XXXXX-XXXXX-XXXXX-XXXXX."
+      );
+    }
+    throw err;
+  }
+  return {
+    matchId: info.matchId.toString(),
+    outcomeId: info.reservationId.toString(),
+    token: info.tvPort,
+    normalized
+  };
+}
 
 // src/lib/demo/uploadLimits.ts
 var MAX_DEMO_BYTES = 500 * 1024 * 1024;
@@ -47595,12 +47640,300 @@ function resolveChunkBytes() {
 var CHUNK_BYTES = resolveChunkBytes();
 var SINGLE_MAX_BYTES = 750 * 1024;
 
+// src/lib/steam/gcDemo.ts
+var import_globaloffensive = __toESM(require("globaloffensive"));
+var import_steam_user = __toESM(require("steam-user"));
+var CS2_APPID = 730;
+var LOGIN_TIMEOUT_MS = 6e4;
+var GC_CONNECT_TIMEOUT_MS = 45e3;
+var MATCH_TIMEOUT_MS = 3e4;
+var session = null;
+var chain = Promise.resolve();
+function refreshToken() {
+  const token = process.env.STEAM_REFRESH_TOKEN?.trim();
+  if (!token) {
+    throw new Error(
+      "STEAM_REFRESH_TOKEN is not set. Generate one (see README) and set it on the analyze worker."
+    );
+  }
+  return token;
+}
+function extractDemoUrl(matches) {
+  for (const match of matches) {
+    const rounds = match.roundstatsall ?? [];
+    for (let i = rounds.length - 1; i >= 0; i--) {
+      const url = rounds[i]?.map;
+      if (typeof url === "string" && /^https?:\/\//i.test(url)) {
+        return url;
+      }
+    }
+    const legacy = match.roundstats_legacy?.map;
+    if (typeof legacy === "string" && /^https?:\/\//i.test(legacy)) {
+      return legacy;
+    }
+  }
+  return null;
+}
+function waitForEvent(emitter, event, timeoutMs, label) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error(`${label} timed out after ${timeoutMs}ms.`));
+    }, timeoutMs);
+    const onEvent = (...args) => {
+      cleanup();
+      resolve(args);
+    };
+    const onError = (err) => {
+      cleanup();
+      reject(err);
+    };
+    function cleanup() {
+      clearTimeout(timer);
+      emitter.off(event, onEvent);
+      emitter.off("error", onError);
+    }
+    emitter.once(event, onEvent);
+    emitter.once("error", onError);
+  });
+}
+async function ensureSession() {
+  if (session) {
+    const { csgo: csgo2 } = session;
+    if (csgo2.haveGCSession) return session;
+    await session.ready.catch(() => void 0);
+    if (csgo2.haveGCSession) return session;
+    try {
+      session.user.logOff();
+    } catch {
+    }
+    session = null;
+  }
+  const user = new import_steam_user.default();
+  const csgo = new import_globaloffensive.default(user);
+  const ready = (async () => {
+    const loggedOn = waitForEvent(
+      user,
+      "loggedOn",
+      LOGIN_TIMEOUT_MS,
+      "Steam login"
+    );
+    user.logOn({ refreshToken: refreshToken() });
+    await loggedOn;
+    user.setPersona(import_steam_user.default.EPersonaState.Online);
+    user.gamesPlayed(CS2_APPID);
+    if (!csgo.haveGCSession) {
+      await waitForEvent(
+        csgo,
+        "connectedToGC",
+        GC_CONNECT_TIMEOUT_MS,
+        "CS2 Game Coordinator connect"
+      );
+    }
+  })();
+  session = { user, csgo, ready };
+  user.on("error", (err) => {
+    console.error("[gcDemo] steam-user error:", err.message);
+  });
+  user.on("disconnected", (eresult, msg) => {
+    console.warn("[gcDemo] disconnected:", eresult, msg ?? "");
+    session = null;
+  });
+  csgo.on("disconnectedFromGC", (reason) => {
+    console.warn("[gcDemo] disconnectedFromGC:", reason);
+  });
+  try {
+    await ready;
+  } catch (err) {
+    session = null;
+    try {
+      user.logOff();
+    } catch {
+    }
+    throw err;
+  }
+  return session;
+}
+function fetchDemoUrlFromShareCode(shareCode) {
+  const run = async () => {
+    const { csgo } = await ensureSession();
+    if (!csgo.haveGCSession) {
+      throw new Error("Not connected to the CS2 Game Coordinator.");
+    }
+    const matchListPromise = waitForEvent(
+      csgo,
+      "matchList",
+      MATCH_TIMEOUT_MS,
+      "Match list response"
+    );
+    csgo.requestGame(shareCode);
+    const [matches] = await matchListPromise;
+    if (!Array.isArray(matches) || matches.length === 0) {
+      throw new Error(
+        "Match not found. The share code may be invalid or the demo expired (~30 days)."
+      );
+    }
+    const url = extractDemoUrl(matches);
+    if (!url) {
+      throw new Error(
+        "No demo download URL for this match. Valve may have expired the replay (~30 days)."
+      );
+    }
+    return url;
+  };
+  const next = chain.then(run, run);
+  chain = next.then(
+    () => void 0,
+    () => void 0
+  );
+  return next;
+}
+
+// src/lib/demo/runAnalyzeShareCodeJob.ts
+function assertDemoparserLoaded() {
+  try {
+    require("@laihoe/demoparser2");
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `Demo parser native module failed to load on this server (${detail}). Rebuild the Docker image with Alpine/musl demoparser bindings.`
+    );
+  }
+}
+async function downloadToBuffer(url, onProgress) {
+  const res = await fetch(url, { redirect: "follow" });
+  if (!res.ok) {
+    throw new Error(`Demo download failed (HTTP ${res.status}).`);
+  }
+  const totalHeader = res.headers.get("content-length");
+  const total = totalHeader != null && totalHeader !== "" ? Number(totalHeader) : null;
+  if (total != null && Number.isFinite(total) && total > MAX_DEMO_BYTES) {
+    throw new Error("Demo file is too large (max 500 MB).");
+  }
+  if (!res.body) {
+    throw new Error("Demo download returned an empty body.");
+  }
+  const reader = res.body.getReader();
+  const chunks = [];
+  let downloaded = 0;
+  for (; ; ) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    downloaded += value.byteLength;
+    if (downloaded > MAX_DEMO_BYTES) {
+      throw new Error("Demo file is too large (max 500 MB).");
+    }
+    chunks.push(value);
+    onProgress(downloaded, total);
+  }
+  return Buffer.concat(chunks.map((c) => Buffer.from(c)));
+}
+async function runAnalyzeShareCodeJob(opts) {
+  const { jobId } = opts;
+  let tempPath = null;
+  const started = Date.now();
+  try {
+    assertDemoparserLoaded();
+    updateAnalyzeJob(jobId, {
+      stage: "fetching",
+      detail: "Decoding share code\u2026",
+      pct: 2
+    });
+    const decoded = decodeShareCode(opts.shareCode);
+    updateAnalyzeJob(jobId, {
+      stage: "fetching",
+      detail: "Requesting match from Steam Game Coordinator\u2026",
+      pct: 5
+    });
+    console.info(
+      `[analyze-share ${jobId}] match=${decoded.matchId} requesting GC\u2026`
+    );
+    const demoUrl = await fetchDemoUrlFromShareCode(decoded.normalized);
+    console.info(
+      `[analyze-share ${jobId}] demo URL ok (+${Date.now() - started}ms)`
+    );
+    updateAnalyzeJob(jobId, {
+      stage: "downloading",
+      detail: "Downloading demo from Valve\u2026",
+      pct: 8
+    });
+    const buffer = await downloadToBuffer(demoUrl, (downloaded, total) => {
+      const pct = total != null && total > 0 ? Math.min(28, 8 + Math.round(downloaded / total * 20)) : 12;
+      updateAnalyzeJob(jobId, {
+        stage: "downloading",
+        detail: `Downloading\u2026 ${(downloaded / 1024 / 1024).toFixed(0)} MB`,
+        pct
+      });
+    });
+    console.info(
+      `[analyze-share ${jobId}] downloaded ${(buffer.length / 1024 / 1024).toFixed(1)} MB (+${Date.now() - started}ms)`
+    );
+    updateAnalyzeJob(jobId, {
+      stage: "decompressing",
+      detail: `Decompressing ${(buffer.length / 1024 / 1024).toFixed(0)} MB\u2026`,
+      pct: 30
+    });
+    tempPath = (0, import_node_path2.join)(demosRoot(), `demo-${jobId}-${(0, import_node_crypto.randomUUID)()}.dem`);
+    await writeDemoTempFile(buffer, tempPath, "match.dem.bz2");
+    updateAnalyzeJob(jobId, {
+      stage: "parsing",
+      detail: "Decompressed \u2014 starting parse\u2026",
+      pct: 36
+    });
+    console.info(
+      `[analyze-share ${jobId}] analyzing\u2026 (+${Date.now() - started}ms)`
+    );
+    const analysis = analyzeDemo(tempPath, (stage, detail, pct) => {
+      const mapped = 36 + Math.round(pct / 100 * 64);
+      updateAnalyzeJob(jobId, { stage, detail, pct: mapped });
+    });
+    await writeAnalyzeJobResult(jobId, analysis);
+    updateAnalyzeJob(jobId, {
+      stage: "done",
+      detail: `Done \u2014 ${analysis.match.mapName}`,
+      pct: 100,
+      done: true
+    });
+    console.info(
+      `[analyze-share ${jobId}] done in ${Date.now() - started}ms (map=${analysis.match.mapName})`
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to fetch or parse demo.";
+    console.error(`[analyze-share ${jobId}]`, err);
+    updateAnalyzeJob(jobId, {
+      stage: "error",
+      detail: message,
+      pct: 0,
+      done: true,
+      error: message
+    });
+  } finally {
+    if (tempPath) {
+      try {
+        await (0, import_promises3.unlink)(tempPath);
+      } catch {
+      }
+    }
+  }
+}
+
+// src/lib/demo/runAnalyzeUploadJob.ts
+var import_server_only4 = __toESM(require_server_only());
+var import_node_crypto2 = require("node:crypto");
+var import_promises5 = require("node:fs/promises");
+var import_node_path4 = require("node:path");
+
 // src/lib/demo/uploadSession.ts
+var import_server_only3 = __toESM(require_server_only());
+var import_node_fs3 = require("node:fs");
+var import_promises4 = require("node:fs/promises");
+var import_node_path3 = require("node:path");
 function uploadSessionDir(uploadId) {
   if (!/^[a-zA-Z0-9_-]{8,80}$/.test(uploadId)) {
     throw new Error("Invalid upload id.");
   }
-  return (0, import_node_path2.join)(uploadsRoot(), uploadId);
+  return (0, import_node_path3.join)(uploadsRoot(), uploadId);
 }
 async function assembleUploadChunksToFile(uploadId, totalChunks, destPath) {
   if (!Number.isInteger(totalChunks) || totalChunks <= 0 || totalChunks > 2e5) {
@@ -47611,7 +47944,7 @@ async function assembleUploadChunksToFile(uploadId, totalChunks, destPath) {
   let total = 0;
   try {
     for (let i = 0; i < totalChunks; i++) {
-      const buf = await (0, import_promises3.readFile)((0, import_node_path2.join)(dir, `${i}.part`));
+      const buf = await (0, import_promises4.readFile)((0, import_node_path3.join)(dir, `${i}.part`));
       total += buf.length;
       if (total > MAX_DEMO_BYTES) {
         throw new Error("Demo file is too large (max 500 MB).");
@@ -47639,7 +47972,7 @@ async function assembleUploadChunks(uploadId, totalChunks) {
   const parts = [];
   let total = 0;
   for (let i = 0; i < totalChunks; i++) {
-    const buf = await (0, import_promises3.readFile)((0, import_node_path2.join)(dir, `${i}.part`));
+    const buf = await (0, import_promises4.readFile)((0, import_node_path3.join)(dir, `${i}.part`));
     total += buf.length;
     if (total > MAX_DEMO_BYTES) {
       throw new Error("Demo file is too large (max 500 MB).");
@@ -47650,13 +47983,13 @@ async function assembleUploadChunks(uploadId, totalChunks) {
 }
 async function cleanupUploadSession(uploadId) {
   try {
-    await (0, import_promises3.rm)(uploadSessionDir(uploadId), { recursive: true, force: true });
+    await (0, import_promises4.rm)(uploadSessionDir(uploadId), { recursive: true, force: true });
   } catch {
   }
 }
 
 // src/lib/demo/runAnalyzeUploadJob.ts
-function assertDemoparserLoaded() {
+function assertDemoparserLoaded2() {
   try {
     require("@laihoe/demoparser2");
   } catch (err) {
@@ -47672,13 +48005,13 @@ async function runAnalyzeUploadJob(opts) {
   let tempPath = null;
   const started = Date.now();
   try {
-    assertDemoparserLoaded();
+    assertDemoparserLoaded2();
     updateAnalyzeJob(jobId, {
       stage: "assembling",
       detail: `Assembling ${totalChunks} chunks\u2026`,
       pct: 2
     });
-    tempPath = (0, import_node_path3.join)(demosRoot(), `demo-${jobId}-${(0, import_node_crypto.randomUUID)()}.dem`);
+    tempPath = (0, import_node_path4.join)(demosRoot(), `demo-${jobId}-${(0, import_node_crypto2.randomUUID)()}.dem`);
     if (isBzip2DemoName(fileName)) {
       const buffer = await assembleUploadChunks(uploadId, totalChunks);
       updateAnalyzeJob(jobId, {
@@ -47742,7 +48075,7 @@ async function runAnalyzeUploadJob(opts) {
     if (uploadId) await cleanupUploadSession(uploadId);
     if (tempPath) {
       try {
-        await (0, import_promises4.unlink)(tempPath);
+        await (0, import_promises5.unlink)(tempPath);
       } catch {
       }
     }
@@ -47791,6 +48124,26 @@ async function waitForRedis(url) {
     }
   }
 }
+async function processPayload(payload) {
+  await createAnalyzeJob(payload.jobId);
+  if (isShareCodePayload(payload)) {
+    await runAnalyzeShareCodeJob({
+      jobId: payload.jobId,
+      shareCode: payload.shareCode
+    });
+    return;
+  }
+  const upload = asUploadPayload(payload);
+  if (!upload) {
+    throw new Error("Invalid analyze job payload.");
+  }
+  await runAnalyzeUploadJob({
+    jobId: upload.jobId,
+    uploadId: upload.uploadId,
+    fileName: upload.fileName,
+    totalChunks: upload.totalChunks
+  });
+}
 async function runOnce(args) {
   const [jobId, uploadId, fileName, totalChunksStr] = args;
   if (!jobId || !uploadId || !fileName || !totalChunksStr) {
@@ -47816,19 +48169,41 @@ async function runOnce(args) {
   console.info(
     `[analyze-worker] once job=${jobId} upload=${uploadId} file=${fileName} chunks=${totalChunks}`
   );
-  await createAnalyzeJob(jobId);
-  await runAnalyzeUploadJob({
+  await processPayload({
+    kind: "upload",
     jobId,
     uploadId,
     fileName,
     totalChunks
   });
 }
+async function runOnceShare(args) {
+  const [jobId, shareCode] = args;
+  if (!jobId || !shareCode) {
+    console.error("Usage: analyze-worker --once-share <jobId> <shareCode>");
+    process.exit(2);
+  }
+  const url = redisUrl();
+  try {
+    await waitForRedis(url);
+  } catch (err) {
+    console.warn(
+      "[analyze-worker] redis check failed (status updates may fail):",
+      err instanceof Error ? err.message : err
+    );
+  }
+  console.info(`[analyze-worker] once-share job=${jobId}`);
+  await processPayload({
+    kind: "shareCode",
+    jobId,
+    shareCode
+  });
+}
 async function runDaemon() {
   const url = redisUrl();
   const conc = concurrency();
   console.info(
-    `[analyze-worker] starting queue=${ANALYZE_QUEUE_NAME} concurrency=${conc} dataDir=${process.env.DATA_DIR || ".data"}`
+    `[analyze-worker] starting queue=${ANALYZE_QUEUE_NAME} concurrency=${conc} dataDir=${process.env.DATA_DIR || ".data"} gc=${process.env.STEAM_REFRESH_TOKEN ? "token-set" : "off"}`
   );
   await waitForRedis(url);
   console.info(`[analyze-worker] redis ok`);
@@ -47849,17 +48224,17 @@ async function runDaemon() {
   const worker = new import_bullmq.Worker(
     ANALYZE_QUEUE_NAME,
     async (job) => {
-      const { jobId, uploadId, fileName, totalChunks } = job.data;
-      console.info(
-        `[analyze-worker] job=${jobId} upload=${uploadId} file=${fileName} chunks=${totalChunks}`
-      );
-      await createAnalyzeJob(jobId);
-      await runAnalyzeUploadJob({
-        jobId,
-        uploadId,
-        fileName,
-        totalChunks
-      });
+      const payload = job.data;
+      if (isShareCodePayload(payload)) {
+        console.info(
+          `[analyze-worker] job=${payload.jobId} kind=shareCode`
+        );
+      } else {
+        console.info(
+          `[analyze-worker] job=${payload.jobId} kind=upload upload=${payload.uploadId} file=${payload.fileName}`
+        );
+      }
+      await processPayload(payload);
     },
     {
       connection: createConnection(url),
@@ -47910,6 +48285,12 @@ async function main() {
   if (argv[0] === "--once") {
     await runOnce(argv.slice(1));
     console.info("[analyze-worker] once exit 0");
+    process.exit(0);
+    return;
+  }
+  if (argv[0] === "--once-share") {
+    await runOnceShare(argv.slice(1));
+    console.info("[analyze-worker] once-share exit 0");
     process.exit(0);
     return;
   }

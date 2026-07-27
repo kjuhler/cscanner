@@ -2,6 +2,10 @@
 
 import { useCallback, useRef, useState } from "react";
 import {
+  analyzeStageTitle,
+  pollAnalyzeJob,
+} from "@/lib/demo/pollAnalyzeJob";
+import {
   CHUNK_BYTES,
   MAX_DEMO_BYTES,
   UPLOAD_PARALLEL,
@@ -22,30 +26,6 @@ type ProgressState = {
 };
 
 const CHUNK_RETRIES = 2;
-const POLL_MS = 400;
-
-function stageTitle(stage: string): string {
-  switch (stage) {
-    case "queued":
-      return "Queued";
-    case "assembling":
-      return "Assembling";
-    case "decompressing":
-      return "Decompressing";
-    case "parsing":
-      return "Parsing demo";
-    case "analyzing":
-      return "Analyzing";
-    case "replay":
-      return "Building replay";
-    case "done":
-      return "Done";
-    case "error":
-      return "Failed";
-    default:
-      return stage;
-  }
-}
 
 function newUploadId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -175,103 +155,6 @@ async function startCompleteJob(
     throw new Error(data.error || `Analyze failed to start (${res.status})`);
   }
   return data.jobId;
-}
-
-async function pollJob(
-  jobId: string,
-  onProgress: (pct: number, detail: string, stage: string) => void,
-): Promise<unknown> {
-  let transientFailures = 0;
-  const maxTransient = 20;
-  const startedAt = Date.now();
-  const queuedTooLongMs = 60_000;
-
-  for (;;) {
-    let res: Response;
-    try {
-      res = await fetch(
-        `/api/upload-demo/job/${encodeURIComponent(jobId)}`,
-      );
-    } catch {
-      transientFailures += 1;
-      if (transientFailures > maxTransient) {
-        throw new Error(
-          "Lost connection while analyzing. The server may have restarted — try again.",
-        );
-      }
-      onProgress(
-        0,
-        `Waiting for server… (retry ${transientFailures}/${maxTransient})`,
-        "analyzing",
-      );
-      await new Promise((r) =>
-        setTimeout(r, Math.min(5000, 500 * transientFailures)),
-      );
-      continue;
-    }
-
-    // Cloudflare 502 while origin was blocked/crashed — retry briefly.
-    if (res.status === 502 || res.status === 503 || res.status === 504) {
-      transientFailures += 1;
-      if (transientFailures > maxTransient) {
-        throw new Error(
-          "Server unavailable during analysis (502). Often out-of-memory or a crash — redeploy with more RAM and check Docker logs.",
-        );
-      }
-      onProgress(
-        0,
-        `Server busy or restarting… (retry ${transientFailures}/${maxTransient})`,
-        "analyzing",
-      );
-      await new Promise((r) =>
-        setTimeout(r, Math.min(5000, 800 * transientFailures)),
-      );
-      continue;
-    }
-
-    const data = (await res.json().catch(() => ({}))) as {
-      done?: boolean;
-      pct?: number;
-      detail?: string;
-      stage?: string;
-      error?: string;
-      result?: unknown;
-    };
-
-    if (!res.ok) {
-      throw new Error(data.error || `Job poll failed (${res.status})`);
-    }
-
-    transientFailures = 0;
-
-    onProgress(
-      typeof data.pct === "number" ? data.pct : 0,
-      data.detail || "Processing…",
-      data.stage || "processing",
-    );
-
-    if (data.done) {
-      if (data.error || data.stage === "error") {
-        throw new Error(data.error || data.detail || "Analyze failed.");
-      }
-      if (data.result == null) {
-        throw new Error("Analyze finished without a result.");
-      }
-      return data.result;
-    }
-
-    // Stuck in "queued" = web enqueued, but worker never picked the job up.
-    if (
-      (data.stage === "queued" || !data.stage) &&
-      Date.now() - startedAt > queuedTooLongMs
-    ) {
-      throw new Error(
-        "Analyze worker is not picking up the job (still Queued). In Portainer check that the cscanner-worker container is running, then open its logs. Health: GET /api/upload-demo should show workerAlive:true.",
-      );
-    }
-
-    await new Promise((r) => setTimeout(r, POLL_MS));
-  }
 }
 
 function ProgressPanel({
@@ -481,12 +364,12 @@ export function DemoUploadForm({ onAnalyzed, disabled }: Props) {
 
       const jobId = await startCompleteJob(uploadId, file.name, totalChunks);
 
-      return pollJob(jobId, (pct, detail, stage) => {
+      return pollAnalyzeJob(jobId, (pct, detail, stage) => {
         onUploadProgress({
           phase: "process",
           pct,
           label: detail,
-          detail: stageTitle(stage),
+          detail: analyzeStageTitle(stage),
         });
       });
     },

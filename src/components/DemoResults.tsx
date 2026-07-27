@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
+  CheatCategory,
   DemoAnalysis,
   Mistake,
   MistakeType,
@@ -10,11 +11,35 @@ import type {
 } from "@/lib/demo";
 import { DemoRadarScene } from "@/components/DemoRadarScene";
 import { DemoReplayPlayer } from "@/components/DemoReplayPlayer";
+import { DemoReviewGuide } from "@/components/DemoReviewGuide";
+import { buildDemoWatchCommand } from "@/lib/demo/watchCommand";
 import { StatsGrid } from "@/components/StatsGrid";
 
 type Props = {
   analysis: DemoAnalysis;
   onReset: () => void;
+};
+
+type PlayerContext = {
+  steamId: string;
+  steam: {
+    personaName: string | null;
+    profileUrl: string | null;
+    accountAgeDays: number | null;
+    profilePrivate: boolean | null;
+    cs2PlaytimeHours: number | null;
+    kd: number | null;
+    hsPercent: number | null;
+    winRate: number | null;
+  };
+  leetify: {
+    profileUrl: string | null;
+    premier: number | null;
+    aim: number | null;
+    preaim: number | null;
+    timeToDamageMs: number | null;
+    winrate: number | null;
+  };
 };
 
 const TYPE_LABEL: Record<MistakeType, string> = {
@@ -37,18 +62,49 @@ function teamLabel(team: number): string {
   return "—";
 }
 
-function mistakeMatchesFocus(m: Mistake, focusId: string): boolean {
-  if (focusId === "all") return true;
-  if (m.steamId === focusId) return true;
-  return Boolean(m.relatedSteamIds?.includes(focusId));
+function mistakeMatchesPlayer(m: Mistake, playerId: string): boolean {
+  return m.steamId === playerId;
+}
+
+function cheatCategoryOf(m: Mistake): CheatCategory | "all" {
+  if (m.cheatCategory) return m.cheatCategory;
+  if (m.message.startsWith("[Wall]")) return "wall";
+  if (m.message.startsWith("[Aim]")) return "aim";
+  if (m.message.startsWith("[Context]")) return "context";
+  return "wall";
 }
 
 export function DemoResults({ analysis, onReset }: Props) {
   const [focusId, setFocusId] = useState<string>("all");
+  const [susCategory, setSusCategory] = useState<"all" | CheatCategory>("all");
+  const [copiedMoments, setCopiedMoments] = useState(false);
+  const [playerContext, setPlayerContext] = useState<Map<string, PlayerContext>>(
+    () => new Map(),
+  );
+
+  const focusedPlayer = useMemo(
+    () =>
+      focusId === "all"
+        ? null
+        : (analysis.players.find((p) => p.steamId === focusId) ?? null),
+    [analysis.players, focusId],
+  );
 
   const filteredMistakes = useMemo(() => {
-    return analysis.mistakes.filter((m) => mistakeMatchesFocus(m, focusId));
+    if (focusId === "all") return analysis.mistakes;
+    return analysis.mistakes.filter((m) => mistakeMatchesPlayer(m, focusId));
   }, [analysis.mistakes, focusId]);
+
+  const displayPlayers = useMemo(() => {
+    if (focusId === "all") return analysis.players;
+    return analysis.players.filter((p) => p.steamId === focusId);
+  }, [analysis.players, focusId]);
+
+  const displayCheatScores = useMemo(() => {
+    const scores = analysis.cheatScores ?? [];
+    if (focusId === "all") return scores;
+    return scores.filter((c) => c.steamId === focusId);
+  }, [analysis.cheatScores, focusId]);
 
   const grouped = useMemo(() => {
     const order: MistakeType[] = [
@@ -70,6 +126,27 @@ export function DemoResults({ analysis, onReset }: Props) {
       .filter((g) => g.items.length > 0);
   }, [filteredMistakes]);
 
+  const cheatMistakeCount = useMemo(
+    () => filteredMistakes.filter((m) => m.type === "cheat").length,
+    [filteredMistakes],
+  );
+
+  const susMoments = useMemo(() => {
+    return filteredMistakes
+      .filter((m) => m.type === "cheat")
+      .filter((m) => susCategory === "all" || cheatCategoryOf(m) === susCategory)
+      .map((m) => ({
+        round: m.round,
+        tick: m.scene?.tick ?? null,
+        steamId: m.steamId,
+        player: m.playerName,
+        severity: m.severity,
+        category: cheatCategoryOf(m),
+        message: m.message,
+      }))
+      .slice(0, 40);
+  }, [filteredMistakes, susCategory]);
+
   const cheatById = useMemo(() => {
     const map = new Map<string, PlayerCheatScore>();
     for (const c of analysis.cheatScores ?? []) {
@@ -80,6 +157,190 @@ export function DemoResults({ analysis, onReset }: Props) {
 
   const { match, players, summary } = analysis;
   const mapName = match.mapName;
+
+  const findingsItems = useMemo(() => {
+    if (focusId === "all") {
+      return [
+        { label: "Total issues", value: String(summary.totalMistakes) },
+        {
+          label: "Cheat signals",
+          value: String(summary.cheatSignals ?? 0),
+        },
+        { label: "Economy", value: String(summary.economyMistakes) },
+        { label: "Trades", value: String(summary.tradeMistakes) },
+      ];
+    }
+
+    const cheat = cheatById.get(focusId);
+    const cheatCount = filteredMistakes.filter((m) => m.type === "cheat").length;
+    const economyCount = filteredMistakes.filter(
+      (m) => m.type === "economy",
+    ).length;
+    const tradeCount = filteredMistakes.filter((m) => m.type === "trade").length;
+
+    return [
+      { label: "Issues", value: String(filteredMistakes.length) },
+      { label: "Cheat signals", value: String(cheatCount) },
+      { label: "Cheat risk", value: String(cheat?.cheatRisk ?? 0) },
+      { label: "ADR", value: String(focusedPlayer?.adr ?? "—") },
+      { label: "Economy", value: String(economyCount) },
+      { label: "Trades", value: String(tradeCount) },
+    ];
+  }, [
+    cheatById,
+    filteredMistakes,
+    focusId,
+    focusedPlayer?.adr,
+    summary.cheatSignals,
+    summary.economyMistakes,
+    summary.totalMistakes,
+    summary.tradeMistakes,
+  ]);
+
+  const findingsFooter = useMemo(() => {
+    if (focusId === "all") {
+      return (
+        <div className="space-y-1 text-xs text-[var(--muted)]">
+          {summary.highestCheatRiskPlayer ? (
+            <p>
+              Highest demo cheat risk:{" "}
+              <span className="text-[var(--danger)]">
+                {summary.highestCheatRiskPlayer}
+              </span>
+            </p>
+          ) : null}
+          {summary.topMistakePlayer ? (
+            <p>
+              Most flags:{" "}
+              <span className="text-[var(--foreground)]">
+                {summary.topMistakePlayer}
+              </span>
+            </p>
+          ) : null}
+          <p>
+            Cheat signals are heuristics from aim/angles — not VAC or proof.
+            Trade/cheat items with radar show positions at that moment.
+          </p>
+        </div>
+      );
+    }
+
+    const ctx = playerContext.get(focusId);
+    return (
+      <div className="space-y-1 text-xs text-[var(--muted)]">
+        <p>
+          Showing only{" "}
+          <span className="text-[var(--foreground)]">
+            {focusedPlayer?.name ?? "this player"}
+          </span>
+          . Replay above still shows the full match.
+        </p>
+        {ctx ? (
+          <p>
+            Steam:{" "}
+            {ctx.steam.cs2PlaytimeHours != null
+              ? `${ctx.steam.cs2PlaytimeHours}h`
+              : "—"}
+            {" · "}KD {ctx.steam.kd != null ? ctx.steam.kd.toFixed(2) : "—"}
+            {" · "}HS{" "}
+            {ctx.steam.hsPercent != null ? `${ctx.steam.hsPercent}%` : "—"}
+            {ctx.leetify.premier != null ? ` · Premier ${ctx.leetify.premier}` : ""}
+          </p>
+        ) : null}
+        <p>
+          Cheat signals are heuristics from aim/angles — not VAC or proof.
+        </p>
+      </div>
+    );
+  }, [
+    focusId,
+    focusedPlayer?.name,
+    playerContext,
+    summary.highestCheatRiskPlayer,
+    summary.topMistakePlayer,
+  ]);
+
+  const copySusMoments = async () => {
+    if (susMoments.length === 0) return;
+    const lines = [
+      `Map: ${match.mapName}`,
+      `Tickrate: ${match.tickRate ?? "unknown"}`,
+      "",
+      ...susMoments.map((s) => {
+        const tickText = s.tick != null ? `tick ${s.tick}` : "tick ?";
+        const watchCmd =
+          s.tick != null
+            ? buildDemoWatchCommand(
+                s.tick,
+                s.steamId,
+                s.player,
+                match.tickRate,
+              )
+            : null;
+        const cmdText = watchCmd ? ` | ${watchCmd}` : "";
+        return `R${s.round} | ${tickText} | ${s.category.toUpperCase()} | ${s.player} | ${s.severity.toUpperCase()} | ${s.message}${cmdText}`;
+      }),
+    ];
+    try {
+      await navigator.clipboard.writeText(lines.join("\n"));
+      setCopiedMoments(true);
+      setTimeout(() => setCopiedMoments(false), 1600);
+    } catch {
+      // ignore clipboard failures
+    }
+  };
+
+  const copyWatchCommand = async (
+    tick: number | null,
+    steamId: string,
+    playerName: string,
+  ) => {
+    if (tick == null || tick <= 0) return;
+    try {
+      await navigator.clipboard.writeText(
+        buildDemoWatchCommand(tick, steamId, playerName, match.tickRate),
+      );
+      setCopiedMoments(true);
+      setTimeout(() => setCopiedMoments(false), 1200);
+    } catch {
+      // ignore clipboard failures
+    }
+  };
+
+  useEffect(() => {
+    const steamIds = players
+      .map((p) => p.steamId)
+      .filter((id) => /^7656119\d{10}$/.test(id));
+    if (steamIds.length === 0) {
+      setPlayerContext(new Map());
+      return;
+    }
+
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const res = await fetch("/api/upload-demo/player-context", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ steamIds }),
+          signal: controller.signal,
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          contexts?: PlayerContext[];
+        };
+        if (!res.ok || !Array.isArray(data.contexts)) return;
+        const map = new Map<string, PlayerContext>();
+        for (const item of data.contexts) {
+          map.set(item.steamId, item);
+        }
+        setPlayerContext(map);
+      } catch {
+        // optional enrichment only
+      }
+    })();
+
+    return () => controller.abort();
+  }, [players]);
 
   return (
     <div className="space-y-6">
@@ -109,55 +370,24 @@ export function DemoResults({ analysis, onReset }: Props) {
         <DemoReplayPlayer
           replay={analysis.replay}
           mapName={analysis.match.mapName}
-        />      ) : null}
+        />
+      ) : null}
 
-      <StatsGrid
-        title="Findings"
-        items={[
-          { label: "Total issues", value: String(summary.totalMistakes) },
-          {
-            label: "Cheat signals",
-            value: String(summary.cheatSignals ?? 0),
-          },
-          { label: "Economy", value: String(summary.economyMistakes) },
-          { label: "Trades", value: String(summary.tradeMistakes) },
-        ]}
-        footer={
-          <div className="space-y-1 text-xs text-[var(--muted)]">
-            {summary.highestCheatRiskPlayer ? (
-              <p>
-                Highest demo cheat risk:{" "}
-                <span className="text-[var(--danger)]">
-                  {summary.highestCheatRiskPlayer}
-                </span>
-              </p>
-            ) : null}
-            {summary.topMistakePlayer ? (
-              <p>
-                Most flags:{" "}
-                <span className="text-[var(--foreground)]">
-                  {summary.topMistakePlayer}
-                </span>
-              </p>
-            ) : null}
-            <p>
-              Cheat signals are heuristics from aim/angles — not VAC or proof.
-              Trade/cheat items with radar show positions at that moment.
-            </p>
-          </div>
-        }
-      />
-
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h3 className="font-[family-name:var(--font-display)] text-sm font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-          Players
-        </h3>
+      <div className="flex flex-col gap-2 border border-[var(--border)] bg-[var(--surface)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="font-[family-name:var(--font-display)] text-sm font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+            Results view
+          </p>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            Filter everything below to one player. Match replay stays full.
+          </p>
+        </div>
         <label className="flex items-center gap-2 text-xs text-[var(--muted)]">
-          Focus
+          Player
           <select
             value={focusId}
             onChange={(e) => setFocusId(e.target.value)}
-            className="border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-sm text-[var(--foreground)]"
+            className="min-w-[10rem] border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-1.5 text-sm text-[var(--foreground)]"
           >
             <option value="all">All players</option>
             {players.map((p) => (
@@ -169,27 +399,155 @@ export function DemoResults({ analysis, onReset }: Props) {
         </label>
       </div>
 
-      <PlayerTable
-        players={players}
-        focusId={focusId}
-        cheatById={cheatById}
+      <StatsGrid
+        title={focusedPlayer ? `${focusedPlayer.name} — findings` : "Findings"}
+        items={findingsItems}
+        footer={findingsFooter}
       />
 
-      {(analysis.cheatScores ?? []).some((c) => c.cheatRisk > 0) ? (
+      <PlayerTable
+        players={displayPlayers}
+        focusId={focusId}
+        cheatById={cheatById}
+        contextById={playerContext}
+        onViewPlayer={setFocusId}
+      />
+
+      {displayCheatScores.length > 0 ? (
         <CheatScoreTable
-          scores={analysis.cheatScores}
-          focusId={focusId}
+          scores={displayCheatScores}
+          singlePlayer={focusId !== "all"}
         />
+      ) : null}
+
+      <DemoReviewGuide />
+
+      {cheatMistakeCount > 0 ? (
+        <section className="space-y-2">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h3 className="font-[family-name:var(--font-display)] text-sm font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+              {focusedPlayer ? `${focusedPlayer.name} — sus moments` : "Sus moments"}
+            </h3>
+            <div className="flex flex-wrap items-center gap-2">
+              {(["all", "wall", "aim", "context"] as const).map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setSusCategory(cat)}
+                  className={[
+                    "border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em]",
+                    susCategory === cat
+                      ? "border-[var(--amber)] bg-[var(--amber)]/15 text-[var(--foreground)]"
+                      : "border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--muted)]",
+                  ].join(" ")}
+                >
+                  {cat}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => void copySusMoments()}
+                className="border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--foreground)] hover:border-[var(--amber)]/60"
+              >
+                {copiedMoments ? "Copied" : "Copy moments"}
+              </button>
+            </div>
+          </div>
+          <div className="overflow-x-auto border border-[var(--border)]">
+            {susMoments.length === 0 ? (
+              <p className="px-4 py-5 text-sm text-[var(--muted)]">
+                No sus moments for this category filter.
+              </p>
+            ) : (
+            <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+              <thead className="bg-[var(--bg-elevated)] text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Round</th>
+                  <th className="px-3 py-2 font-medium">Tick</th>
+                  {focusId === "all" ? (
+                    <th className="px-3 py-2 font-medium">Player</th>
+                  ) : null}
+                  <th className="px-3 py-2 font-medium">Type</th>
+                  <th className="px-3 py-2 font-medium">Severity</th>
+                  <th className="px-3 py-2 font-medium">Signal</th>
+                  <th className="px-3 py-2 font-medium">Watch</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border)] bg-[var(--surface)]">
+                {susMoments.map((s, i) => (
+                  <tr key={`${s.player}-${s.round}-${s.tick ?? "na"}-${i}`}>
+                    <td className="px-3 py-2 font-[family-name:var(--font-code)]">
+                      {s.round > 0 ? `R${s.round}` : "—"}
+                    </td>
+                    <td className="px-3 py-2 font-[family-name:var(--font-code)]">
+                      {s.tick ?? "—"}
+                    </td>
+                    {focusId === "all" ? (
+                      <td className="px-3 py-2 font-medium text-[var(--foreground)]">
+                        {s.player}
+                      </td>
+                    ) : null}
+                    <td className="px-3 py-2 font-[family-name:var(--font-code)] uppercase text-[var(--muted)]">
+                      {s.category}
+                    </td>
+                    <td
+                      className={`px-3 py-2 font-[family-name:var(--font-code)] ${
+                        s.severity === "danger"
+                          ? "text-[var(--danger)]"
+                          : s.severity === "warn"
+                            ? "text-[var(--warn)]"
+                            : "text-[var(--muted)]"
+                      }`}
+                    >
+                      {s.severity}
+                    </td>
+                    <td className="px-3 py-2 text-[var(--muted)]">{s.message}</td>
+                    <td className="px-3 py-2">
+                      {s.tick != null ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void copyWatchCommand(s.tick, s.steamId, s.player)
+                          }
+                          className="border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--foreground)] hover:border-[var(--amber)]/60"
+                          title={buildDemoWatchCommand(
+                            s.tick,
+                            s.steamId,
+                            s.player,
+                            match.tickRate,
+                          )}
+                        >
+                          Copy watch cmd
+                        </button>
+                      ) : (
+                        <span className="text-xs text-[var(--muted)]">No tick</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            )}
+          </div>
+          <p className="text-xs text-[var(--muted)]">
+            In CS2: open the demo, close the demo UI (Shift+F2), then paste the
+            copied command in console. It jumps 15s before the flagged moment
+            and locks onto that player.
+          </p>
+        </section>
       ) : null}
 
       <section className="space-y-4">
         <h3 className="font-[family-name:var(--font-display)] text-sm font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-          Mistakes &amp; improvements
+          {focusedPlayer
+            ? `${focusedPlayer.name} — mistakes & improvements`
+            : "Mistakes & improvements"}
         </h3>
         {grouped.length === 0 ? (
           <p className="border border-[var(--border)] bg-[var(--surface)] px-5 py-6 text-sm text-[var(--muted)]">
-            No issues flagged for this filter. Heuristics are v1 signals — not
-            every play is covered.
+            {focusedPlayer
+              ? `No issues flagged for ${focusedPlayer.name}.`
+              : "No issues flagged for this filter. Heuristics are v1 signals — not every play is covered."}
           </p>
         ) : (
           grouped.map(({ type, items }) => (
@@ -213,9 +571,11 @@ export function DemoResults({ analysis, onReset }: Props) {
                       <span className="shrink-0 font-[family-name:var(--font-code)] text-xs text-[var(--muted)]">
                         {m.round > 0 ? `R${m.round}` : "—"}
                       </span>
-                      <span className="shrink-0 text-sm font-medium text-[var(--foreground)] sm:w-36">
-                        {m.playerName}
-                      </span>
+                      {focusId === "all" ? (
+                        <span className="shrink-0 text-sm font-medium text-[var(--foreground)] sm:w-36">
+                          {m.playerName}
+                        </span>
+                      ) : null}
                       <span
                         className={`text-sm ${severityClass(m.severity)}`}
                       >
@@ -248,12 +608,14 @@ export function DemoResults({ analysis, onReset }: Props) {
 
 function CheatScoreTable({
   scores,
-  focusId,
+  singlePlayer,
 }: {
   scores: PlayerCheatScore[];
-  focusId: string;
+  singlePlayer: boolean;
 }) {
-  const rows = scores.filter((s) => s.cheatRisk > 0 || s.wallLookSamples > 0);
+  const rows = singlePlayer
+    ? scores
+    : scores.filter((s) => s.cheatRisk > 0 || s.wallLookSamples > 0);
   if (rows.length === 0) return null;
 
   return (
@@ -262,60 +624,84 @@ function CheatScoreTable({
         Demo cheat heuristics
       </h3>
       <div className="overflow-x-auto border border-[var(--border)]">
-        <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
           <thead className="bg-[var(--bg-elevated)] text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
             <tr>
               <th className="px-3 py-2 font-medium">Player</th>
               <th className="px-3 py-2 font-medium">Risk</th>
-              <th className="px-3 py-2 font-medium">Wall-look%</th>
-              <th className="px-3 py-2 font-medium">Pre-aim</th>
-              <th className="px-3 py-2 font-medium">Rage snaps</th>
+              <th className="px-3 py-2 font-medium">Wall%</th>
+              <th className="px-3 py-2 font-medium">Pre</th>
+              <th className="px-3 py-2 font-medium">Swaps</th>
+              <th className="px-3 py-2 font-medium">Sel</th>
+              <th className="px-3 py-2 font-medium">Info</th>
+              <th className="px-3 py-2 font-medium">Smoke</th>
+              <th className="px-3 py-2 font-medium">Lurk</th>
+              <th className="px-3 py-2 font-medium">Trig</th>
+              <th className="px-3 py-2 font-medium">Xfer</th>
+              <th className="px-3 py-2 font-medium">RCS</th>
+              <th className="px-3 py-2 font-medium">Snap</th>
               <th className="px-3 py-2 font-medium">Spin</th>
+              <th className="px-3 py-2 font-medium">Mom</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border)] bg-[var(--surface)]">
-            {rows.map((s) => {
-              const focused = focusId !== "all" && s.steamId === focusId;
-              return (
-                <tr
-                  key={s.steamId}
-                  className={
-                    focused
-                      ? "bg-[var(--amber)]/10"
-                      : focusId !== "all"
-                        ? "opacity-50"
-                        : undefined
-                  }
+            {rows.map((s) => (
+              <tr key={s.steamId}>
+                <td className="px-3 py-2 font-medium text-[var(--foreground)]">
+                  {s.name}
+                </td>
+                <td
+                  className={`px-3 py-2 font-[family-name:var(--font-code)] ${
+                    s.cheatRisk >= 40
+                      ? "text-[var(--danger)]"
+                      : s.cheatRisk >= 20
+                        ? "text-[var(--warn)]"
+                        : ""
+                  }`}
                 >
-                  <td className="px-3 py-2 font-medium text-[var(--foreground)]">
-                    {s.name}
-                  </td>
-                  <td
-                    className={`px-3 py-2 font-[family-name:var(--font-code)] ${
-                      s.cheatRisk >= 40
-                        ? "text-[var(--danger)]"
-                        : s.cheatRisk >= 20
-                          ? "text-[var(--warn)]"
-                          : ""
-                    }`}
-                  >
-                    {s.cheatRisk}
-                  </td>
-                  <td className="px-3 py-2 font-[family-name:var(--font-code)]">
-                    {s.wallLookScore}
-                  </td>
-                  <td className="px-3 py-2 font-[family-name:var(--font-code)]">
-                    {s.preAimFlags}
-                  </td>
-                  <td className="px-3 py-2 font-[family-name:var(--font-code)]">
-                    {s.rageSnaps}
-                  </td>
-                  <td className="px-3 py-2 font-[family-name:var(--font-code)]">
-                    {s.spinbotFlags}
-                  </td>
-                </tr>
-              );
-            })}
+                  {s.cheatRisk}
+                </td>
+                <td className="px-3 py-2 font-[family-name:var(--font-code)]">
+                  {s.wallLookScore}
+                </td>
+                <td className="px-3 py-2 font-[family-name:var(--font-code)]">
+                  {s.preAimFlags}
+                </td>
+                <td className="px-3 py-2 font-[family-name:var(--font-code)]">
+                  {s.wallTrackRotations}
+                </td>
+                <td className="px-3 py-2 font-[family-name:var(--font-code)]">
+                  {s.selectiveClearFlags}
+                </td>
+                <td className="px-3 py-2 font-[family-name:var(--font-code)]">
+                  {s.infoRotateFlags}
+                </td>
+                <td className="px-3 py-2 font-[family-name:var(--font-code)]">
+                  {s.smokeSpamFlags}
+                </td>
+                <td className="px-3 py-2 font-[family-name:var(--font-code)]">
+                  {s.lurkerCheckFlags}
+                </td>
+                <td className="px-3 py-2 font-[family-name:var(--font-code)]">
+                  {s.triggerFlags}
+                </td>
+                <td className="px-3 py-2 font-[family-name:var(--font-code)]">
+                  {s.transferFlags}
+                </td>
+                <td className="px-3 py-2 font-[family-name:var(--font-code)]">
+                  {s.rcsFlags}
+                </td>
+                <td className="px-3 py-2 font-[family-name:var(--font-code)]">
+                  {s.rageSnaps}
+                </td>
+                <td className="px-3 py-2 font-[family-name:var(--font-code)]">
+                  {s.spinbotFlags}
+                </td>
+                <td className="px-3 py-2 font-[family-name:var(--font-code)]">
+                  {s.momentumFlags}
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -327,13 +713,21 @@ function PlayerTable({
   players,
   focusId,
   cheatById,
+  contextById,
+  onViewPlayer,
 }: {
   players: PlayerStats[];
   focusId: string;
   cheatById: Map<string, PlayerCheatScore>;
+  contextById: Map<string, PlayerContext>;
+  onViewPlayer: (steamId: string) => void;
 }) {
   return (
-    <div className="overflow-x-auto border border-[var(--border)]">
+    <section className="space-y-2">
+      <h3 className="font-[family-name:var(--font-display)] text-sm font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+        {focusId === "all" ? "Players" : "Player stats"}
+      </h3>
+      <div className="overflow-x-auto border border-[var(--border)]">
       <table className="w-full min-w-[720px] border-collapse text-left text-sm">
         <thead className="bg-[var(--bg-elevated)] text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
           <tr>
@@ -350,21 +744,41 @@ function PlayerTable({
         </thead>
         <tbody className="divide-y divide-[var(--border)] bg-[var(--surface)]">
           {players.map((p) => {
-            const focused = focusId !== "all" && p.steamId === focusId;
             const risk = cheatById.get(p.steamId)?.cheatRisk ?? 0;
+            const ctx = contextById.get(p.steamId);
             return (
-              <tr
-                key={p.steamId}
-                className={
-                  focused
-                    ? "bg-[var(--amber)]/10"
-                    : focusId !== "all"
-                      ? "opacity-50"
-                      : undefined
-                }
-              >
+              <tr key={p.steamId}>
                 <td className="px-3 py-2 font-medium text-[var(--foreground)]">
                   {p.name}
+                  {focusId === "all" ? (
+                    <button
+                      type="button"
+                      onClick={() => onViewPlayer(p.steamId)}
+                      className="ml-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--amber)] hover:underline"
+                    >
+                      View only
+                    </button>
+                  ) : null}
+                  {ctx?.steam?.profileUrl ? (
+                    <a
+                      href={ctx.steam.profileUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ml-2 text-xs text-[var(--muted)] underline decoration-dotted"
+                    >
+                      Steam
+                    </a>
+                  ) : null}
+                  {ctx?.leetify?.profileUrl ? (
+                    <a
+                      href={ctx.leetify.profileUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ml-2 text-xs text-[var(--muted)] underline decoration-dotted"
+                    >
+                      Leetify
+                    </a>
+                  ) : null}
                 </td>
                 <td className="px-3 py-2 text-[var(--muted)]">
                   {teamLabel(p.team)}
@@ -397,12 +811,31 @@ function PlayerTable({
                   }`}
                 >
                   {risk}
+                  {ctx ? (
+                    <div className="mt-1 text-[10px] leading-tight text-[var(--muted)]">
+                      {ctx.steam.cs2PlaytimeHours != null
+                        ? `${ctx.steam.cs2PlaytimeHours}h`
+                        : "—"}
+                      {" · "}
+                      KD{" "}
+                      {ctx.steam.kd != null ? ctx.steam.kd.toFixed(2) : "—"}
+                      {" · "}
+                      HS{" "}
+                      {ctx.steam.hsPercent != null
+                        ? `${ctx.steam.hsPercent}%`
+                        : "—"}
+                      {ctx.leetify.premier != null
+                        ? ` · P ${ctx.leetify.premier}`
+                        : ""}
+                    </div>
+                  ) : null}
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
-    </div>
+      </div>
+    </section>
   );
 }

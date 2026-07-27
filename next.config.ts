@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
     "@laihoe/demoparser2",
     "bullmq",
     "ioredis",
+    "steam-user",
+    "globaloffensive",
+    "@doctormckay/steam-crypto",
   ],
   outputFileTracingIncludes: {
     "/api/upload-demo": [
