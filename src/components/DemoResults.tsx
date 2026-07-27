@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   CheatCategory,
+  CoachingHighlight,
   DemoAnalysis,
   Mistake,
   MistakeType,
@@ -10,9 +11,14 @@ import type {
   PlayerStats,
 } from "@/lib/demo";
 import { DemoRadarScene } from "@/components/DemoRadarScene";
-import { DemoReplayPlayer } from "@/components/DemoReplayPlayer";
+import {
+  DemoReplayPlayer,
+  type DemoReplayHandle,
+} from "@/components/DemoReplayPlayer";
+import { DemoHighlightsPanel } from "@/components/DemoHighlightsPanel";
 import { DemoReviewGuide } from "@/components/DemoReviewGuide";
 import { buildPlayerCoachingTips } from "@/lib/demo/coaching";
+import { buildCoachingHighlights } from "@/lib/demo/highlights";
 import { buildDemoWatchCommand } from "@/lib/demo/watchCommand";
 import { buildDemoUrl } from "@/lib/demo/demoLink";
 import type { DemoLinkSource } from "@/lib/demo/demoLink";
@@ -27,6 +33,7 @@ type Props = {
   initialFocusId?: string;
   onFocusChange?: (playerId: string) => void;
   onReset: () => void;
+  onAnalysisUpdate?: (analysis: DemoAnalysis) => void;
 };
 
 type PlayerContext = {
@@ -91,11 +98,15 @@ export function DemoResults({
   initialFocusId = "all",
   onFocusChange,
   onReset,
+  onAnalysisUpdate,
 }: Props) {
   const [focusId, setFocusId] = useState<string>(initialFocusId);
   const [susCategory, setSusCategory] = useState<"all" | CheatCategory>("all");
   const [copiedMoments, setCopiedMoments] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [refreshingCoaching, setRefreshingCoaching] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const replayRef = useRef<DemoReplayHandle>(null);
   const [playerContext, setPlayerContext] = useState<Map<string, PlayerContext>>(
     () => new Map(),
   );
@@ -142,6 +153,32 @@ export function DemoResults({
     URL.revokeObjectURL(url);
   };
 
+  const refreshCoaching = async () => {
+    if (!runId) return;
+    setRefreshingCoaching(true);
+    setRefreshError(null);
+    try {
+      const res = await fetch(
+        `/api/demo/run/${encodeURIComponent(runId)}/reanalyze`,
+        { method: "POST" },
+      );
+      const data = (await res.json().catch(() => ({}))) as {
+        result?: DemoAnalysis;
+        error?: string;
+      };
+      if (!res.ok || !data.result) {
+        throw new Error(data.error || `Refresh failed (${res.status})`);
+      }
+      onAnalysisUpdate?.(data.result);
+    } catch (err) {
+      setRefreshError(
+        err instanceof Error ? err.message : "Failed to refresh coaching.",
+      );
+    } finally {
+      setRefreshingCoaching(false);
+    }
+  };
+
   const expiryLabel = useMemo(() => {
     if (!expiresAt) return null;
     const remainingMs = expiresAt - Date.now();
@@ -158,6 +195,43 @@ export function DemoResults({
         : (analysis.players.find((p) => p.steamId === focusId) ?? null),
     [analysis.players, focusId],
   );
+
+  const highlights = useMemo(() => {
+    if (analysis.highlights && analysis.highlights.length > 0) {
+      return analysis.highlights;
+    }
+    if (analysis.replay) {
+      return buildCoachingHighlights(analysis.replay, analysis.players);
+    }
+    return [];
+  }, [analysis.highlights, analysis.replay, analysis.players]);
+
+  const watchHighlight = (h: CoachingHighlight) => {
+    replayRef.current?.jumpTo({
+      tick: h.tick,
+      focusSteamId: h.focusSteamId ?? h.actorSteamIds[0],
+      zoom: true,
+      followAction: true,
+      x: h.x,
+      y: h.y,
+    });
+  };
+
+  const watchScene = (
+    tick: number | undefined,
+    steamId: string,
+    scene?: Mistake["scene"],
+  ) => {
+    if (tick == null) return;
+    const marker = scene?.markers.find((m) => m.steamId === steamId);
+    replayRef.current?.jumpTo({
+      tick,
+      focusSteamId: steamId,
+      zoom: true,
+      x: marker?.x,
+      y: marker?.y,
+    });
+  };
 
   const filteredMistakes = useMemo(() => {
     if (focusId === "all") return analysis.mistakes;
@@ -446,6 +520,16 @@ export function DemoResults({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {runId ? (
+            <button
+              type="button"
+              onClick={() => void refreshCoaching()}
+              disabled={refreshingCoaching}
+              className="border border-[var(--amber)]/40 bg-[var(--amber)]/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--amber-bright)] hover:bg-[var(--amber)]/20 disabled:opacity-50"
+            >
+              {refreshingCoaching ? "Refreshing…" : "Refresh coaching"}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={downloadJson}
@@ -471,11 +555,31 @@ export function DemoResults({
           </button>
         </div>
       </div>
+      {refreshError ? (
+        <p className="text-xs text-[var(--danger)]" role="alert">
+          {refreshError}
+        </p>
+      ) : null}
+      {runId ? (
+        <p className="text-xs text-[var(--muted)]">
+          Refresh coaching updates highlights and utility flags from stored replay
+          data. Economy and cheat signals are unchanged.
+        </p>
+      ) : null}
 
       {analysis.replay && analysis.replay.frames.length > 1 ? (
         <DemoReplayPlayer
+          ref={replayRef}
           replay={analysis.replay}
           mapName={analysis.match.mapName}
+        />
+      ) : null}
+
+      {highlights.length > 0 ? (
+        <DemoHighlightsPanel
+          highlights={highlights}
+          focusPlayerId={focusId === "all" ? null : focusId}
+          onWatch={watchHighlight}
         />
       ) : null}
 
@@ -617,21 +721,35 @@ export function DemoResults({
                     <td className="px-3 py-2 text-[var(--muted)]">{s.message}</td>
                     <td className="px-3 py-2">
                       {s.tick != null ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void copyWatchCommand(s.tick, s.steamId, s.player)
-                          }
-                          className="border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--foreground)] hover:border-[var(--amber)]/60"
-                          title={buildDemoWatchCommand(
-                            s.tick,
-                            s.steamId,
-                            s.player,
-                            match.tickRate,
-                          )}
-                        >
-                          Copy watch cmd
-                        </button>
+                        <div className="flex flex-wrap gap-1">
+                          {analysis.replay ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (s.tick == null) return;
+                                watchScene(s.tick, s.steamId, undefined);
+                              }}
+                              className="border border-[var(--amber)]/40 bg-[var(--amber)]/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--amber-bright)] hover:bg-[var(--amber)]/20"
+                            >
+                              Watch
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void copyWatchCommand(s.tick, s.steamId, s.player)
+                            }
+                            className="border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--foreground)] hover:border-[var(--amber)]/60"
+                            title={buildDemoWatchCommand(
+                              s.tick,
+                              s.steamId,
+                              s.player,
+                              match.tickRate,
+                            )}
+                          >
+                            Copy cmd
+                          </button>
+                        </div>
                       ) : (
                         <span className="text-xs text-[var(--muted)]">No tick</span>
                       )}
@@ -694,6 +812,17 @@ export function DemoResults({
                       >
                         {m.message}
                       </span>
+                      {m.scene?.tick != null && analysis.replay ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            watchScene(m.scene?.tick, m.steamId, m.scene)
+                          }
+                          className="shrink-0 border border-[var(--amber)]/40 bg-[var(--amber)]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--amber-bright)]"
+                        >
+                          Watch
+                        </button>
+                      ) : null}
                     </div>
                     {m.scene && m.scene.markers.length > 0 ? (
                       <DemoRadarScene

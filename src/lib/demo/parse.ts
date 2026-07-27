@@ -149,6 +149,31 @@ export function parseDemoFile(
     roundMvps = [];
   }
 
+  let bombPlanted: DemoEventRow[] = [];
+  let bombDefused: DemoEventRow[] = [];
+  let bombExploded: DemoEventRow[] = [];
+  try {
+    bombPlanted = asRows(
+      parseEvent(path, "bomb_planted", [], ["total_rounds_played"]),
+    );
+  } catch {
+    bombPlanted = [];
+  }
+  try {
+    bombDefused = asRows(
+      parseEvent(path, "bomb_defused", [], ["total_rounds_played"]),
+    );
+  } catch {
+    bombDefused = [];
+  }
+  try {
+    bombExploded = asRows(
+      parseEvent(path, "bomb_exploded", [], ["total_rounds_played"]),
+    );
+  } catch {
+    bombExploded = [];
+  }
+
   const freezeTickNumbers = roundFreezeEnds
     .map((row) => Number(row.tick ?? row.Tick ?? NaN))
     .filter((t) => Number.isFinite(t));
@@ -203,6 +228,36 @@ export function parseDemoFile(
   } catch {
     grenadeTrajectories = [];
   }
+
+  report("Sampling flash blind ticks…", 72);
+  let flashTickSamples: DemoEventRow[] = [];
+  const flashSampleTicks = new Set<number>();
+  const flashOffsets = [0, 8, 16, 32, 64, 96];
+  for (const row of flashDetonates) {
+    const t = Number(row.tick ?? row.Tick ?? 0);
+    if (!Number.isFinite(t) || t <= 0) continue;
+    for (const off of flashOffsets) flashSampleTicks.add(t + off);
+  }
+  const flashTickList = [...flashSampleTicks].sort((a, b) => a - b);
+  if (flashTickList.length > 0) {
+    try {
+      flashTickSamples = asRows(
+        parseTicks(
+          path,
+          [
+            "flash_duration",
+            "flash_max_alpha",
+            "team_num",
+            "is_alive",
+          ],
+          flashTickList,
+        ),
+      );
+    } catch {
+      flashTickSamples = [];
+    }
+  }
+
   report("Parse complete", 75);
 
   return {
@@ -224,6 +279,10 @@ export function parseDemoFile(
     roundEnds,
     roundMvps,
     freezeTicks,
+    bombPlanted,
+    bombDefused,
+    bombExploded,
+    flashTickSamples,
     motionTicks,
     grenadeTrajectories,
   };

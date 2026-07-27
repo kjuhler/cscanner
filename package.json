@@ -9,6 +9,8 @@
     "dev:worker": "pnpm build:analyze-worker && node analyze-worker.cjs",
     "build": "next build",
     "build:analyze-worker": "node scripts/build-analyze-worker.mjs",
+    "refresh:example-demo": "node scripts/refresh-example-demo.mjs",
+    "extract:map-zones": "node scripts/extract-map-zones.mjs",
     "start": "next start",
     "start:worker": "node analyze-worker.cjs",
     "lint": "eslint"

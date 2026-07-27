@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createDemoRun } from "@/lib/demo/demoRun";
+import { reanalyzeFromStored } from "@/lib/demo/reanalyze";
 import {
   extractAnalysisFromPayload,
   isDemoAnalysis,
@@ -19,6 +20,8 @@ export async function POST(request: Request) {
     const contentType = request.headers.get("content-type") ?? "";
     let raw: unknown;
 
+    let reanalyze = false;
+
     if (contentType.includes("multipart/form-data")) {
       const form = await request.formData();
       const file = form.get("file");
@@ -29,9 +32,13 @@ export async function POST(request: Request) {
         );
       }
       raw = JSON.parse(await file.text()) as unknown;
+      reanalyze =
+        form.get("reanalyze") === "true" ||
+        new URL(request.url).searchParams.get("reanalyze") === "1";
     } else {
       const text = await request.text();
       raw = JSON.parse(text) as unknown;
+      reanalyze = new URL(request.url).searchParams.get("reanalyze") === "1";
     }
 
     const candidate = extractAnalysis(raw);
@@ -42,7 +49,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const analysis = normalizeAnalysis(candidate);
+    let analysis = normalizeAnalysis(candidate);
+    if (reanalyze) {
+      analysis = reanalyzeFromStored(analysis);
+    }
     const meta = await createDemoRun(analysis, { type: "import" });
 
     return NextResponse.json({

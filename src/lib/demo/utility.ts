@@ -1,12 +1,25 @@
 import {
   nameOf,
+  normalizeSteamId,
   num,
   roundOf,
   steamIdOf,
   str,
   tickOf,
 } from "./helpers";
+import { buildSceneAtTick } from "./scene";
 import type { Mistake, ParsedDemo } from "./types";
+
+function buildTeamById(demo: ParsedDemo): Map<string, number> {
+  const teamById = new Map<string, number>();
+  for (const p of demo.playerInfo) {
+    const sid = normalizeSteamId(p.steamid);
+    if (sid && typeof p.team_number === "number") {
+      teamById.set(sid, p.team_number);
+    }
+  }
+  return teamById;
+}
 
 /**
  * Utility efficiency heuristics:
@@ -15,6 +28,7 @@ import type { Mistake, ParsedDemo } from "./types";
  */
 export function analyzeUtility(demo: ParsedDemo): Mistake[] {
   const mistakes: Mistake[] = [];
+  const teamById = buildTeamById(demo);
 
   const blindsByRound = new Map<number, typeof demo.blinds>();
   for (const blind of demo.blinds) {
@@ -39,9 +53,13 @@ export function analyzeUtility(demo: ParsedDemo): Mistake[] {
       const victimId = steamIdOf(b, "user");
       if (attackerId !== throwerId) return false;
       if (!victimId || victimId === throwerId) return false;
+      const throwerTeam = teamById.get(throwerId) ?? 0;
+      const victimTeam = teamById.get(victimId) ?? 0;
+      if (throwerTeam > 0 && victimTeam > 0 && throwerTeam === victimTeam) {
+        return false;
+      }
       const bt = tickOf(b);
-      // Blind events usually land within a short window of detonate.
-      return Math.abs(bt - flashTick) <= 128; // ~2s at 64 tick
+      return Math.abs(bt - flashTick) <= 128;
     });
 
     if (!enemyBlind) {
@@ -52,11 +70,16 @@ export function analyzeUtility(demo: ParsedDemo): Mistake[] {
         type: "utility",
         message: "Flashbang with no enemy flashed",
         severity: "info",
+        scene: buildSceneAtTick(
+          demo,
+          flashTick,
+          { [throwerId]: "focus" },
+          { focusSteamId: throwerId },
+        ),
       });
     }
   }
 
-  // HE damage by round+approximate thrower via player_hurt weapon hegrenade.
   const heDamageByRoundPlayer = new Map<string, number>();
   for (const hurt of demo.hurts) {
     const weapon = str(hurt, "weapon").toLowerCase();
@@ -77,6 +100,7 @@ export function analyzeUtility(demo: ParsedDemo): Mistake[] {
     const throwerName =
       nameOf(he, "thrower") || nameOf(he, "user") || throwerId;
     const round = roundOf(he);
+    const heTick = tickOf(he);
     const dmg = heDamageByRoundPlayer.get(`${round}|${throwerId}`) ?? 0;
     if (dmg <= 0) {
       mistakes.push({
@@ -86,6 +110,12 @@ export function analyzeUtility(demo: ParsedDemo): Mistake[] {
         type: "utility",
         message: "HE grenade dealt 0 damage",
         severity: "info",
+        scene: buildSceneAtTick(
+          demo,
+          heTick,
+          { [throwerId]: "focus" },
+          { focusSteamId: throwerId },
+        ),
       });
     }
   }

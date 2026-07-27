@@ -14,11 +14,27 @@ export function num(row: DemoEventRow, ...keys: string[]): number {
   for (const key of keys) {
     const v = row[key];
     if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "boolean") return v ? 1 : 0;
     if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v))) {
       return Number(v);
     }
   }
   return 0;
+}
+
+/** Alive flag may be 0/1 or boolean depending on demoparser field. */
+export function isAliveValue(row: DemoEventRow): boolean {
+  for (const key of ["is_alive", "alive"] as const) {
+    const v = row[key];
+    if (typeof v === "boolean") return v;
+    if (typeof v === "number") return v !== 0;
+    if (typeof v === "string") {
+      const s = v.toLowerCase();
+      if (s === "true" || s === "1") return true;
+      if (s === "false" || s === "0") return false;
+    }
+  }
+  return true;
 }
 
 export function steamIdOf(

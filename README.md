@@ -61,6 +61,31 @@ Open [http://localhost:3000](http://localhost:3000).
 Profile lookup and share-code analyze work without Redis.  
 On `/demo`, paste a share code to start a new review. Shared rundowns live at `/demo/r/{runId}` (24h). The bundled example is at `/demo/example`.
 
+**Refresh bundled example JSON** after adding new analysis fields (e.g. highlights):
+
+```bash
+# Fast: re-normalize existing JSON + rebuild highlights from replay (~seconds)
+pnpm refresh:example-demo
+
+# Slow: full re-parse from local .dem (place under public/demo/, gitignored)
+pnpm refresh:example-demo -- --from-dem public/demo/furia-vs-falcons-m3-inferno.dem
+```
+
+Output: `public/demo/cscanner-de_inferno-7a296e3b8ffe4735a21bb30f.json`
+
+**Re-analyze stored JSON** (highlights, utility coaching — not economy/cheat):
+
+- On a saved rundown (`/demo/r/{runId}`), click **Refresh coaching**
+- On import, enable **Apply latest coaching rules** (default on)
+
+**Map zones** for site/execute detection live in `src/lib/demo/zones/data/`. Regenerate coarse polygons:
+
+```bash
+pnpm extract:map-zones
+```
+
+Blind fidelity uses `flash_max_alpha` / `flash_duration` tick samples when `player_blind` events are missing (common in HLTV demos). Full blind data requires re-parsing with `--from-dem`.
+
 Accepted share-code input formats:
 - plain `CSGO-XXXXX-XXXXX-XXXXX-XXXXX-XXXXX`
 - full Steam copy URI (auto-extracted), e.g.  

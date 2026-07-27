@@ -113,6 +113,30 @@ export function DemoReviewGuide() {
 
           <div>
             <h4 className="font-[family-name:var(--font-display)] text-xs font-semibold uppercase tracking-[0.14em] text-[var(--foreground)]">
+              Coaching review
+            </h4>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              <li>
+                Use Coaching highlights — good vs failed executes show whether
+                flashes created space.
+              </li>
+              <li>
+                Watch impact plays for multi-kills, entries after flash, and
+                round-swing moments.
+              </li>
+              <li>
+                On the radar replay, blinded players show a flash icon (red =
+                enemy flash, amber = team flash).
+              </li>
+              <li>
+                Click Watch to zoom the replay on the play; use Focus play to
+                stay tight on the action.
+              </li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="font-[family-name:var(--font-display)] text-xs font-semibold uppercase tracking-[0.14em] text-[var(--foreground)]">
               CS2 workflow
             </h4>
             <ul className="mt-2 list-disc space-y-1 pl-5">
