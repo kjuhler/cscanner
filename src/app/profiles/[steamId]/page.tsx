@@ -18,7 +18,9 @@ import { PremierPanel } from "@/components/PremierPanel";
 import { SeasonRanksPanel } from "@/components/SeasonRanksPanel";
 import { SiteHeader } from "@/components/SiteHeader";
 import { StatsGrid } from "@/components/StatsGrid";
+import { StatsOverviewGrid } from "@/components/StatsOverviewGrid";
 import { TrackerSources } from "@/components/TrackerSources";
+import { TrustScorePanel } from "@/components/TrustScorePanel";
 import {
   formatDecimal,
   formatNumber,
@@ -38,7 +40,7 @@ export async function generateMetadata({
   const { steamId } = await params;
   return {
     title: steamId,
-    description: `CS2 stats and cheat risk signals for Steam ID ${steamId}`,
+    description: `CS2 trust score and stats for Steam ID ${steamId}`,
   };
 }
 
@@ -93,8 +95,18 @@ export default async function ProfilePage({ params }: PageProps) {
           steamId={steamId}
           bannedFriends={data.bans.friends}
           stackStats={data.leetify?.stackStats ?? null}
-          risk={data.risk}
         />
+
+        <div className="grid gap-4 lg:grid-cols-[minmax(16rem,22rem)_1fr] lg:items-start">
+          <TrustScorePanel trust={data.trust} bans={data.bans} />
+          <StatsOverviewGrid
+            leetify={data.leetify}
+            leetifyMatchRows={data.leetifyMatchRows}
+            faceitPlayer={faceit.player}
+            faceitStats={faceit.stats}
+            cs2={data.cs2}
+          />
+        </div>
 
         <PremierPanel
           steamId={steamId}

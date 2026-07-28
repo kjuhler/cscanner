@@ -282,14 +282,17 @@ export type LeetifyProfile = {
   scopeProfileUrl?: string | null;
 };
 
+export type TrustPillarId = "statistical" | "accountFlags" | "anomalies";
+
 export type RiskSignal = {
   id: string;
   label: string;
   weight: number;
+  /** How much this signal reduces the pillar (risk contribution before invert). */
   contribution: number;
   detail: string;
-  /** Which analysis pillar this signal belongs to */
-  pillar: "trust" | "stats" | "consistency" | "bans";
+  /** Which trust pillar this signal belongs to */
+  pillar: TrustPillarId;
 };
 
 export type RiskProtectiveFactor = {
@@ -298,18 +301,32 @@ export type RiskProtectiveFactor = {
   detail: string;
 };
 
-export type RiskLevel =
-  | "low"
-  | "moderate"
-  | "elevated"
-  | "high"
+/** Trust level — higher score is better (CSRep-style). */
+export type TrustLevel =
+  | "excellent"
+  | "good"
+  | "fair"
+  | "poor"
   | "critical"
   | "unknown";
 
+/** @deprecated Use TrustLevel */
+export type RiskLevel = TrustLevel;
+
+export type TrustPillars = {
+  statistical: number;
+  accountFlags: number;
+  anomalies: number;
+};
+
 export type RiskAssessment = {
+  /** Trust score 0–100 (higher = more trustworthy). Null when not enough data. */
   score: number | null;
   confidence: "low" | "medium" | "high";
-  level: RiskLevel;
+  level: TrustLevel;
+  pillars: TrustPillars | null;
+  /** Small additive bonus (e.g. aged account + playtime + clean bans), 0–10. */
+  accountBonus: number;
   signals: RiskSignal[];
   /** Highest-contribution concerning signals */
   redFlags: RiskSignal[];
@@ -317,6 +334,9 @@ export type RiskAssessment = {
   protective: RiskProtectiveFactor[];
   disclaimer: string;
 };
+
+/** Alias — same object, trust-oriented naming. */
+export type TrustAssessment = RiskAssessment;
 
 export type SteamBans = {
   vacBanned: boolean;
@@ -347,6 +367,60 @@ export type ScopeSourceInfo = {
   filledFields: string[];
 };
 
+/** Per-match player row from Leetify /v3/profile/matches (serializable). */
+export type LeetifyMatchPlayerRow = {
+  steamId: string;
+  finishedAt: string | null;
+  map: string | null;
+  source: string | null;
+  won: boolean | null;
+  /** Leetify crosshair/preaim degrees (single angle metric). */
+  preaim: number | null;
+  /** Time to damage (ms) — Leetify `reaction_time`. */
+  timeToDamageMs: number | null;
+  kills: number;
+  deaths: number;
+  assists: number;
+  hsKills: number;
+  shotsFired: number;
+  shotsHit: number;
+  damage: number;
+  roundsCount: number;
+  roundsSurvived: number;
+  tradedDeathsSucceed: number;
+  roundsWon: number | null;
+  roundsLost: number | null;
+  leetifyRating: number | null;
+};
+
+/** Aggregated Leetify per-match stats over a recent window. */
+export type LeetifyWindowStats = {
+  sampleSize: number;
+  timeToDamageMs: number | null;
+  reactionTimeMs: number | null;
+  crosshairPlacement: number | null;
+  preaim: number | null;
+  kd: number | null;
+  adr: number | null;
+  /** (hits / shots) * 100 */
+  accuracy: number | null;
+  /** (hs kills / hits) * 100 */
+  hsPercent: number | null;
+  wallbangKillPercent: number | null;
+  smokeKillPercent: number | null;
+  hltvRating: number | null;
+  kast: number | null;
+  accuracyEnemySpotted: number | null;
+  sprayAccuracy: number | null;
+  leetifyRating: number | null;
+  winRate: number | null;
+};
+
+export type LeetifyWindows = {
+  last30: LeetifyWindowStats | null;
+  last90: LeetifyWindowStats | null;
+};
+
 export type PlayerAggregate = {
   steamId: string;
   steam: SteamProfile | null;
@@ -360,9 +434,14 @@ export type PlayerAggregate = {
     bans: FaceitBan[];
   };
   leetify: LeetifyProfile | null;
+  /** Recent-match windows from /v3/profile/matches (null when unavailable). */
+  leetifyWindows: LeetifyWindows | null;
+  /** Raw match rows for client-side day filters (null when unavailable). */
+  leetifyMatchRows: LeetifyMatchPlayerRow[] | null;
   /** Scope ratings fetch (aim fallback); null when unavailable. */
   scope: ScopeSourceInfo | null;
   bans: PlayerBans;
-  risk: RiskAssessment;
+  /** CSRep-style trust assessment (higher score = more trustworthy). */
+  trust: TrustAssessment;
   errors: string[];
 };

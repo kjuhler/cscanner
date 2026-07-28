@@ -1,30 +1,36 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import type { RiskAssessment } from "@/lib/types";
+import type { TrustAssessment, TrustLevel } from "@/lib/types";
 
-function scoreColor(score: number | null): string {
+function trustColor(score: number | null): string {
   if (score == null) return "var(--muted)";
-  if (score >= 60) return "var(--danger)";
-  if (score >= 30) return "var(--warn)";
-  return "var(--ok)";
+  if (score >= 75) return "var(--ok)";
+  if (score >= 55) return "var(--amber)";
+  if (score >= 35) return "var(--warn)";
+  return "var(--danger)";
+}
+
+function levelLabel(level: TrustLevel): string {
+  if (level === "unknown") return "unknown";
+  return level;
 }
 
 type Props = {
-  risk: RiskAssessment;
+  trust: TrustAssessment;
 };
 
-export function RiskScoreTooltip({ risk }: Props) {
-  const color = scoreColor(risk.score);
+export function TrustScoreTooltip({ trust }: Props) {
+  const color = trustColor(trust.score);
   const tooltipId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [open, setOpen] = useState(false);
 
   const flags =
-    risk.redFlags.length > 0
-      ? risk.redFlags
-      : risk.signals.filter((s) => s.contribution > 0).slice(0, 4);
+    trust.redFlags.length > 0
+      ? trust.redFlags
+      : trust.signals.filter((s) => s.contribution > 0).slice(0, 4);
 
   function clearCloseTimer() {
     if (closeTimer.current) {
@@ -75,37 +81,50 @@ export function RiskScoreTooltip({ risk }: Props) {
     >
       <button
         type="button"
-        className="cursor-help font-[family-name:var(--font-display)] text-xl font-bold leading-none tabular-nums underline decoration-dotted decoration-[var(--muted)] underline-offset-4"
+        className="cursor-help font-[family-name:var(--font-display)] text-2xl font-bold leading-none tabular-nums underline decoration-dotted decoration-[var(--muted)] underline-offset-4"
         style={{ color }}
         aria-expanded={open}
         aria-describedby={open ? tooltipId : undefined}
         onFocus={openNow}
         onClick={() => setOpen((v) => !v)}
       >
-        {risk.score == null ? "—" : `${risk.score}%`}
+        {trust.score == null ? "—" : `${trust.score}%`}
       </button>
 
       {open ? (
         <div
           id={tooltipId}
           role="tooltip"
-          className="absolute left-0 top-[calc(100%+0.35rem)] z-40 w-[min(22rem,calc(100vw-2.5rem))] border border-[var(--border)] bg-[var(--surface)] p-3 shadow-lg"
+          className="absolute left-1/2 top-[calc(100%+0.5rem)] z-40 w-[min(22rem,calc(100vw-2.5rem))] -translate-x-1/2 border border-[var(--border)] bg-[var(--surface)] p-3 shadow-lg"
           onMouseEnter={openNow}
           onMouseLeave={scheduleClose}
         >
           <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
-            Risk breakdown
+            Trust breakdown
           </p>
           <p className="mt-1 font-[family-name:var(--font-display)] text-sm font-semibold text-[var(--foreground)]">
-            {risk.score == null
+            {trust.score == null
               ? "Not enough data"
-              : `${risk.score}% · ${risk.level} · confidence ${risk.confidence}`}
+              : `${trust.score}% · ${levelLabel(trust.level)} · confidence ${trust.confidence}`}
           </p>
+
+          {trust.pillars ? (
+            <ul className="mt-2 space-y-1 text-xs text-[var(--muted)]">
+              <li>Statistical Trust: {trust.pillars.statistical}</li>
+              <li>Account Flags: {trust.pillars.accountFlags}</li>
+              <li>Anomalies: {trust.pillars.anomalies}</li>
+              {trust.accountBonus > 0 ? (
+                <li className="text-[var(--ok)]">
+                  Account Bonus: +{trust.accountBonus}%
+                </li>
+              ) : null}
+            </ul>
+          ) : null}
 
           {flags.length > 0 ? (
             <div className="mt-2.5">
               <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--danger)]">
-                Red flags
+                Concerns
               </p>
               <ul className="mt-1 max-h-48 space-y-1.5 overflow-y-auto">
                 {flags.map((f) => (
@@ -117,7 +136,7 @@ export function RiskScoreTooltip({ risk }: Props) {
                     {f.contribution > 0 ? (
                       <span className="text-[var(--amber)]">
                         {" "}
-                        +{f.contribution}
+                        −{f.contribution}
                       </span>
                     ) : null}
                     <span className="mt-0.5 block text-[var(--muted)]">
@@ -133,13 +152,13 @@ export function RiskScoreTooltip({ risk }: Props) {
             </p>
           )}
 
-          {risk.protective.length > 0 ? (
+          {trust.protective.length > 0 ? (
             <div className="mt-2.5 border-t border-[var(--border)] pt-2.5">
               <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--ok)]">
-                Pulls safer
+                Supports trust
               </p>
               <ul className="mt-1 space-y-1.5">
-                {risk.protective.map((p) => (
+                {trust.protective.map((p) => (
                   <li
                     key={p.id}
                     className="text-xs leading-snug text-[var(--foreground)]"
@@ -155,7 +174,7 @@ export function RiskScoreTooltip({ risk }: Props) {
           ) : null}
 
           <p className="mt-2.5 border-t border-[var(--border)] pt-2 text-[10px] leading-relaxed text-[var(--muted)]">
-            {risk.disclaimer}
+            {trust.disclaimer}
           </p>
           <p className="mt-1 text-[10px] text-[var(--muted)]">
             Click % to pin · Esc to close

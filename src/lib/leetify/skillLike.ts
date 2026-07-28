@@ -278,6 +278,9 @@ function interpolateRank(points: RankPoint[], value: number): number {
   return last.rank;
 }
 
+/** Approx. Premier ceiling used to map skill-like ratings → top %. */
+const PREMIER_CEILING = 35000;
+
 /**
  * Estimate Premier rating from a Leetify skill score.
  * Rounds to nearest 250 (CS2Tracker display convention).
@@ -292,6 +295,20 @@ export function skillLikePremier(
   const raw = interpolateRank(points, value);
   const rounded = Math.round(raw / 250) * 250;
   return rounded > 0 ? rounded : null;
+}
+
+/**
+ * Approximate "top x%" from a skill value via the Premier-like curve.
+ * Higher skill → lower top % (top 1% is best).
+ */
+export function skillLikeTopPercent(
+  skill: SkillLikeKey,
+  value: number | null | undefined,
+): number | null {
+  const rating = skillLikePremier(skill, value);
+  if (rating == null) return null;
+  const pct = (1 - rating / PREMIER_CEILING) * 100;
+  return Math.max(1, Math.min(99, Math.round(pct)));
 }
 
 /** Convert our stored opening (×100 display) back to Leetify raw. */

@@ -4,7 +4,7 @@ import {
   SKILL_LIKE_LABELS,
   clutchRawFromDisplay,
   openingRawFromDisplay,
-  skillLikePremier,
+  skillLikeTopPercent,
   type SkillLikeKey,
 } from "@/lib/leetify/skillLike";
 import type { FaceitPlayer, LeetifyProfile } from "@/lib/types";
@@ -34,32 +34,16 @@ function ttdProgress(ms: number | null | undefined): number | null {
   return clampProgress(((800 - ms) / 400) * 100);
 }
 
-function LikeFooter({
-  label,
-  rating,
-}: {
-  label: string;
-  rating: number | null;
-}) {
-  if (rating == null) return null;
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="text-[11px] text-[var(--muted)]">{label}:</span>
-      <RankIcon kind="premier" rating={rating} size="sm" />
-    </div>
-  );
-}
-
 function MetricCard({
   title,
+  topPercent,
   value,
   barProgress,
-  footer,
 }: {
   title: string;
+  topPercent?: number | null;
   value: ReactNode;
   barProgress: number | null;
-  footer?: ReactNode;
 }) {
   const fill =
     barProgress == null ? 0 : Math.max(0, Math.min(100, barProgress));
@@ -69,6 +53,11 @@ function MetricCard({
       <div className="flex items-baseline justify-between gap-2">
         <p className="text-sm font-semibold tracking-wide text-[var(--foreground)]">
           {title}
+          {topPercent != null ? (
+            <span className="ml-1 text-[11px] font-normal text-[var(--muted)]">
+              (top {topPercent}%)
+            </span>
+          ) : null}
         </p>
         <div className="font-[family-name:var(--font-display)] text-xl font-bold tabular-nums text-[var(--foreground)]">
           {value}
@@ -82,31 +71,7 @@ function MetricCard({
           />
         ) : null}
       </div>
-      {footer ? <div className="mt-2.5">{footer}</div> : null}
     </div>
-  );
-}
-
-function SkillLikeRow({
-  skill,
-  scoreLabel,
-  barProgress,
-  likeRating,
-}: {
-  skill: SkillLikeKey;
-  scoreLabel: string;
-  barProgress: number | null;
-  likeRating: number | null;
-}) {
-  const labels = SKILL_LIKE_LABELS[skill];
-
-  return (
-    <MetricCard
-      title={labels.title}
-      value={scoreLabel}
-      barProgress={barProgress}
-      footer={<LikeFooter label={labels.like} rating={likeRating} />}
-    />
   );
 }
 
@@ -147,25 +112,25 @@ export function PremierPanel({ steamId, leetify, faceitPlayer, kd }: Props) {
     skill: SkillLikeKey;
     scoreLabel: string;
     barProgress: number | null;
-    likeRating: number | null;
+    topPercent: number | null;
   }> = [
     {
       skill: "aim",
       scoreLabel: formatDecimal(leetify.aim, 1),
       barProgress: leetify.aim,
-      likeRating: skillLikePremier("aim", leetify.aim),
+      topPercent: skillLikeTopPercent("aim", leetify.aim),
     },
     {
       skill: "positioning",
       scoreLabel: formatDecimal(leetify.positioning, 1),
       barProgress: leetify.positioning,
-      likeRating: skillLikePremier("positioning", leetify.positioning),
+      topPercent: skillLikeTopPercent("positioning", leetify.positioning),
     },
     {
       skill: "utility",
       scoreLabel: formatDecimal(leetify.utility, 1),
       barProgress: leetify.utility,
-      likeRating: skillLikePremier("utility", leetify.utility),
+      topPercent: skillLikeTopPercent("utility", leetify.utility),
     },
     {
       skill: "opening",
@@ -174,25 +139,25 @@ export function PremierPanel({ steamId, leetify, faceitPlayer, kd }: Props) {
         leetify.opening == null
           ? null
           : clampProgress(((leetify.opening + 1) / 2) * 100),
-      likeRating: skillLikePremier("opening", openingRaw),
+      topPercent: skillLikeTopPercent("opening", openingRaw),
     },
     {
       skill: "clutch",
       scoreLabel: formatPercent(leetify.clutch),
       barProgress: leetify.clutch,
-      likeRating: skillLikePremier("clutch", clutchRaw),
+      topPercent: skillLikeTopPercent("clutch", clutchRaw),
     },
     {
       skill: "ttd",
       scoreLabel: formatMs(leetify.timeToDamageMs),
       barProgress: ttdProgress(leetify.timeToDamageMs),
-      likeRating: skillLikePremier("ttd", leetify.timeToDamageMs),
+      topPercent: skillLikeTopPercent("ttd", leetify.timeToDamageMs),
     },
     {
       skill: "hs",
       scoreLabel: formatPercent(leetify.hsPercent),
       barProgress: leetify.hsPercent,
-      likeRating: skillLikePremier("hs", leetify.hsPercent),
+      topPercent: skillLikeTopPercent("hs", leetify.hsPercent),
     },
     {
       skill: "preaim",
@@ -204,44 +169,53 @@ export function PremierPanel({ steamId, leetify, faceitPlayer, kd }: Props) {
         leetify.preaim == null
           ? null
           : clampProgress(((20 - leetify.preaim) / 15) * 100),
-      likeRating: skillLikePremier("preaim", leetify.preaim),
+      topPercent: skillLikeTopPercent("preaim", leetify.preaim),
     },
     {
       skill: "kd",
       scoreLabel: formatDecimal(kd),
       barProgress:
         kd == null ? null : clampProgress(((kd - 0.5) / 1.3) * 100),
-      likeRating: skillLikePremier("kd", kd),
+      topPercent: skillLikeTopPercent("kd", kd),
     },
     {
       skill: "spotted",
       scoreLabel: formatPercent(leetify.accuracyEnemySpotted),
       barProgress: leetify.accuracyEnemySpotted,
-      likeRating: skillLikePremier("spotted", leetify.accuracyEnemySpotted),
+      topPercent: skillLikeTopPercent(
+        "spotted",
+        leetify.accuracyEnemySpotted,
+      ),
     },
     {
       skill: "spray",
       scoreLabel: formatPercent(leetify.sprayAccuracy),
       barProgress: leetify.sprayAccuracy,
-      likeRating: skillLikePremier("spray", leetify.sprayAccuracy),
+      topPercent: skillLikeTopPercent("spray", leetify.sprayAccuracy),
     },
     {
       skill: "counterStrafe",
       scoreLabel: formatPercent(leetify.counterStrafeRatio),
       barProgress: leetify.counterStrafeRatio,
-      likeRating: skillLikePremier("counterStrafe", leetify.counterStrafeRatio),
+      topPercent: skillLikeTopPercent(
+        "counterStrafe",
+        leetify.counterStrafeRatio,
+      ),
     },
     {
       skill: "openingDuel",
       scoreLabel: formatPercent(leetify.openingDuelSuccess),
       barProgress: leetify.openingDuelSuccess,
-      likeRating: skillLikePremier("openingDuel", leetify.openingDuelSuccess),
+      topPercent: skillLikeTopPercent(
+        "openingDuel",
+        leetify.openingDuelSuccess,
+      ),
     },
     {
       skill: "trade",
       scoreLabel: formatPercent(leetify.tradeKillSuccess),
       barProgress: leetify.tradeKillSuccess,
-      likeRating: skillLikePremier("trade", leetify.tradeKillSuccess),
+      topPercent: skillLikeTopPercent("trade", leetify.tradeKillSuccess),
     },
     {
       skill: "flashKill",
@@ -250,7 +224,7 @@ export function PremierPanel({ steamId, leetify, faceitPlayer, kd }: Props) {
         leetify.flashbangLeadingToKill == null
           ? null
           : clampProgress((leetify.flashbangLeadingToKill / 10) * 100),
-      likeRating: skillLikePremier(
+      topPercent: skillLikeTopPercent(
         "flashKill",
         leetify.flashbangLeadingToKill,
       ),
@@ -262,7 +236,7 @@ export function PremierPanel({ steamId, leetify, faceitPlayer, kd }: Props) {
         leetify.enemiesFlashedPerFlashbang == null
           ? null
           : clampProgress((leetify.enemiesFlashedPerFlashbang / 1.5) * 100),
-      likeRating: skillLikePremier(
+      topPercent: skillLikeTopPercent(
         "enemiesFlashed",
         leetify.enemiesFlashedPerFlashbang,
       ),
@@ -276,7 +250,7 @@ export function PremierPanel({ steamId, leetify, faceitPlayer, kd }: Props) {
           : clampProgress(
               ((0.8 - leetify.teammatesFlashedPerFlashbang) / 0.75) * 100,
             ),
-      likeRating: skillLikePremier(
+      topPercent: skillLikeTopPercent(
         "teammatesFlashed",
         leetify.teammatesFlashedPerFlashbang,
       ),
@@ -288,7 +262,7 @@ export function PremierPanel({ steamId, leetify, faceitPlayer, kd }: Props) {
         leetify.heDamagePerNade == null
           ? null
           : clampProgress((leetify.heDamagePerNade / 24) * 100),
-      likeRating: skillLikePremier("heDamage", leetify.heDamagePerNade),
+      topPercent: skillLikeTopPercent("heDamage", leetify.heDamagePerNade),
     },
     {
       skill: "utilityDeath",
@@ -300,14 +274,19 @@ export function PremierPanel({ steamId, leetify, faceitPlayer, kd }: Props) {
         leetify.utilityOnDeathAvg == null
           ? null
           : clampProgress(((450 - leetify.utilityOnDeathAvg) / 400) * 100),
-      likeRating: skillLikePremier("utilityDeath", leetify.utilityOnDeathAvg),
+      topPercent: skillLikeTopPercent(
+        "utilityDeath",
+        leetify.utilityOnDeathAvg,
+      ),
     },
-  ].filter((row): row is {
-    skill: SkillLikeKey;
-    scoreLabel: string;
-    barProgress: number | null;
-    likeRating: number | null;
-  } => row.scoreLabel !== "—");
+  ].filter(
+    (row): row is {
+      skill: SkillLikeKey;
+      scoreLabel: string;
+      barProgress: number | null;
+      topPercent: number | null;
+    } => row.scoreLabel !== "—",
+  );
 
   return (
     <section className="overflow-hidden border border-[var(--border)] bg-[var(--surface)]">
@@ -367,7 +346,13 @@ export function PremierPanel({ steamId, leetify, faceitPlayer, kd }: Props) {
 
         <div className="grid gap-px bg-[var(--border)] sm:grid-cols-2 lg:grid-cols-3">
           {skills.map((row) => (
-            <SkillLikeRow key={row.skill} {...row} />
+            <MetricCard
+              key={row.skill}
+              title={SKILL_LIKE_LABELS[row.skill].title}
+              topPercent={row.topPercent}
+              value={row.scoreLabel}
+              barProgress={row.barProgress}
+            />
           ))}
 
           {leetify.winrate != null ? (
