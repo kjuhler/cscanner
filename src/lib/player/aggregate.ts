@@ -6,6 +6,8 @@ import {
   getFaceitStats,
 } from "@/lib/faceit";
 import { getLeetifyProfile } from "@/lib/leetify";
+import { getLeetifyProfileMatches } from "@/lib/leetify/matches";
+import { buildLeetifyWindows } from "@/lib/leetify/windowStats";
 import { assessRisk } from "@/lib/risk/score";
 import { getScopeAimStats, type ScopeAimStats } from "@/lib/scope";
 import {
@@ -25,7 +27,9 @@ import type {
   FaceitMapStats,
   FaceitMatch,
   FaceitStats,
+  LeetifyMatchPlayerRow,
   LeetifyProfile,
+  LeetifyWindows,
   PlayerAggregate,
   ScopeSourceInfo,
 } from "@/lib/types";
@@ -122,7 +126,7 @@ export async function aggregatePlayer(
 ): Promise<PlayerAggregate> {
   const errors: string[] = [];
 
-  const [steam, playtime, level, friendIds, cs2, leetifyRaw, steamBans, scope] =
+  const [steam, playtime, level, friendIds, cs2, leetifyRaw, steamBans, scope, matchRows] =
     await Promise.all([
       settled(getPlayerSummary(steamId), errors, "Steam profile"),
       settled(getCs2PlaytimeHours(steamId), errors, "CS2 playtime"),
@@ -132,7 +136,15 @@ export async function aggregatePlayer(
       settled(getLeetifyProfile(steamId), errors, "Leetify"),
       settled(getPlayerBans(steamId), errors, "Steam bans"),
       settled(getScopeAimStats(steamId), errors, "Scope"),
+      settled(getLeetifyProfileMatches(steamId, 100), errors, "Leetify matches"),
     ]);
+
+  const leetifyMatchRows: LeetifyMatchPlayerRow[] | null = matchRows?.length
+    ? matchRows
+    : null;
+  const leetifyWindows: LeetifyWindows | null = leetifyMatchRows
+    ? buildLeetifyWindows(leetifyMatchRows)
+    : null;
 
   const friendsList = friendIds ?? null;
   const steamExtras = {
@@ -262,7 +274,7 @@ export async function aggregatePlayer(
     friends: bannedFriends,
   };
 
-  const risk = assessRisk({
+  const trust = assessRisk({
     steam,
     steamExtras,
     cs2,
@@ -285,9 +297,11 @@ export async function aggregatePlayer(
       bans: faceitBans,
     },
     leetify,
+    leetifyWindows,
+    leetifyMatchRows,
     scope: scopeInfo,
     bans,
-    risk,
+    trust,
     errors,
   };
 }

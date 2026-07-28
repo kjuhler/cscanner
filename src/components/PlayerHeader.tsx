@@ -7,11 +7,9 @@ import {
 import type {
   BannedFriendsStats,
   LeetifyStackStats,
-  RiskAssessment,
   SteamExtras,
   SteamProfile,
 } from "@/lib/types";
-import { RiskScoreTooltip } from "@/components/RiskScoreTooltip";
 
 type Props = {
   steam: SteamProfile;
@@ -19,7 +17,6 @@ type Props = {
   steamId: string;
   bannedFriends: BannedFriendsStats;
   stackStats?: LeetifyStackStats | null;
-  risk: RiskAssessment;
 };
 
 export function PlayerHeader({
@@ -28,7 +25,6 @@ export function PlayerHeader({
   steamId,
   bannedFriends,
   stackStats,
-  risk,
 }: Props) {
   return (
     <header className="relative border border-[var(--border)] bg-[var(--surface)]">
@@ -82,81 +78,62 @@ export function PlayerHeader({
         </dl>
       </div>
 
-      <RiskAndStackRow risk={risk} stackStats={stackStats ?? null} />
+      {stackStats ? <StackRow stackStats={stackStats} /> : null}
     </header>
   );
 }
 
-function RiskAndStackRow({
-  risk,
-  stackStats,
-}: {
-  risk: RiskAssessment;
-  stackStats: LeetifyStackStats | null;
-}) {
-  const segments = stackStats
-    ? [
-        {
-          key: "solo",
-          label: "Solo",
-          percent: stackStats.soloPercent,
-          fill: "bg-[var(--foreground)]",
-        },
-        {
-          key: "mid",
-          label: "2–4",
-          percent: stackStats.stack2to4Percent,
-          fill: "bg-[var(--muted)]",
-        },
-        {
-          key: "five",
-          label: "5 stack",
-          percent: stackStats.stack5Percent,
-          fill: "bg-[var(--border)]",
-        },
-      ]
-    : [];
+function StackRow({ stackStats }: { stackStats: LeetifyStackStats }) {
+  const segments = [
+    {
+      key: "solo",
+      label: "Solo",
+      percent: stackStats.soloPercent,
+      fill: "bg-[var(--foreground)]",
+    },
+    {
+      key: "mid",
+      label: "2–4",
+      percent: stackStats.stack2to4Percent,
+      fill: "bg-[var(--muted)]",
+    },
+    {
+      key: "five",
+      label: "5 stack",
+      percent: stackStats.stack5Percent,
+      fill: "bg-[var(--border)]",
+    },
+  ];
 
   return (
-    <div className="relative z-20 flex flex-col gap-3 border-t border-[var(--border)] px-5 py-3 lg:flex-row lg:items-center lg:gap-6">
-      <div className="flex shrink-0 items-baseline gap-2.5">
-        <p className="whitespace-nowrap text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
-          Cheating risk
-        </p>
-        <RiskScoreTooltip risk={risk} />
-      </div>
-
-      {stackStats ? (
-        <div className="min-w-0 flex-1 border-t border-[var(--border)] pt-3 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            {segments.map((seg) => (
-              <div key={seg.key} className="flex items-baseline gap-1.5">
-                <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
-                  {seg.label}
-                </span>
-                <span className="font-[family-name:var(--font-display)] text-sm font-semibold tabular-nums text-[var(--foreground)]">
-                  {formatPercent(seg.percent)}
-                </span>
-              </div>
-            ))}
-            <span className="ml-auto text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
-              {formatNumber(stackStats.sampleSize)} games
+    <div className="relative z-20 border-t border-[var(--border)] px-5 py-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        {segments.map((seg) => (
+          <div key={seg.key} className="flex items-baseline gap-1.5">
+            <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+              {seg.label}
+            </span>
+            <span className="font-[family-name:var(--font-display)] text-sm font-semibold tabular-nums text-[var(--foreground)]">
+              {formatPercent(seg.percent)}
             </span>
           </div>
-          <div className="mt-1.5 flex h-1 overflow-hidden bg-[var(--bg-elevated)]">
-            {segments.map((seg) =>
-              seg.percent > 0 ? (
-                <div
-                  key={seg.key}
-                  className={`h-full ${seg.fill}`}
-                  style={{ width: `${Math.max(seg.percent, 0)}%` }}
-                  title={`${seg.label}: ${formatPercent(seg.percent)}`}
-                />
-              ) : null,
-            )}
-          </div>
-        </div>
-      ) : null}
+        ))}
+        <span className="ml-auto text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+          {formatNumber(stackStats.sampleSize)} games
+        </span>
+      </div>
+      <div className="mt-1.5 flex h-1 overflow-hidden bg-[var(--bg-elevated)]">
+        {segments.map((seg) =>
+          seg.percent > 0 ? (
+            <div
+              key={seg.key}
+              className={`h-full ${seg.fill}`}
+              style={{ width: `${Math.max(seg.percent, 0)}%` }}
+              title={`${seg.label}: ${formatPercent(seg.percent)}`}
+            />
+          ) : null,
+        )}
+      </div>
     </div>
   );
 }

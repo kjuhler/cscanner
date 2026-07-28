@@ -4,22 +4,23 @@ import type {
   LeetifyProfile,
   PlayerBans,
   RiskAssessment,
-  RiskLevel,
   RiskProtectiveFactor,
   RiskSignal,
   SteamCs2Stats,
   SteamExtras,
   SteamProfile,
+  TrustLevel,
+  TrustPillarId,
 } from "@/lib/types";
 
 const DISCLAIMER =
-  "Heuristic risk only — based on public Steam / FACEIT / Leetify patterns. Not VAC, FACEIT AC, or proof of cheating.";
+  "Heuristic trust score only — based on public Steam / FACEIT / Leetify patterns. Not VAC, FACEIT AC, or proof of legitimacy.";
 
-/** Pillar weights for the composite score (bans are additive on top). */
+/** Pillar weights for the composite trust score (before account bonus). */
 const PILLAR_WEIGHT = {
-  trust: 0.35,
-  stats: 0.4,
-  consistency: 0.25,
+  statistical: 0.4,
+  accountFlags: 0.35,
+  anomalies: 0.25,
 } as const;
 
 type RiskInput = {
@@ -32,8 +33,6 @@ type RiskInput = {
   bans: PlayerBans;
 };
 
-type Pillar = RiskSignal["pillar"];
-
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
 }
@@ -45,20 +44,40 @@ function push(
   signals.push(signal);
 }
 
-function levelFromScore(score: number | null): RiskLevel {
+function levelFromTrust(score: number | null): TrustLevel {
   if (score == null) return "unknown";
-  if (score >= 75) return "critical";
-  if (score >= 55) return "high";
-  if (score >= 35) return "elevated";
-  if (score >= 15) return "moderate";
-  return "low";
+  if (score >= 90) return "excellent";
+  if (score >= 75) return "good";
+  if (score >= 55) return "fair";
+  if (score >= 35) return "poor";
+  return "critical";
 }
 
-function pillarCap(signals: RiskSignal[], pillar: Pillar, cap: number): number {
+function pillarRisk(
+  signals: RiskSignal[],
+  pillar: TrustPillarId,
+  cap: number,
+): number {
   const sum = signals
     .filter((s) => s.pillar === pillar)
     .reduce((acc, s) => acc + s.contribution, 0);
   return clamp(sum, 0, cap);
+}
+
+function emptyAssessment(
+  confidence: RiskAssessment["confidence"] = "low",
+): RiskAssessment {
+  return {
+    score: null,
+    confidence,
+    level: "unknown",
+    pillars: null,
+    accountBonus: 0,
+    signals: [],
+    redFlags: [],
+    protective: [],
+    disclaimer: DISCLAIMER,
+  };
 }
 
 export function assessRisk(input: RiskInput): RiskAssessment {
@@ -88,35 +107,39 @@ export function assessRisk(input: RiskInput): RiskAssessment {
   const seasons = input.leetify?.seasonRanksCs2 ?? [];
   const stack = input.leetify?.stackStats ?? null;
 
-  // ─── Bans (hard additive, outside the three soft pillars) ───────────────
+  // ─── Account Flags (bans) ───────────────────────────────────────────────
   dataPoints += 1;
   const steamBan = input.bans.steam;
+  let hasHardBan = false;
   if (steamBan) {
     if (steamBan.vacBanned || steamBan.numberOfVacBans > 0) {
+      hasHardBan = true;
       push(signals, {
         id: "vac-ban",
         label: "VAC ban on record",
-        pillar: "bans",
+        pillar: "accountFlags",
         weight: 45,
         contribution: 45,
         detail: `${steamBan.numberOfVacBans} VAC ban(s); last ban ${steamBan.daysSinceLastBan} day(s) ago.`,
       });
     }
     if (steamBan.numberOfGameBans > 0) {
+      hasHardBan = true;
       push(signals, {
         id: "game-ban",
         label: "Steam game ban on record",
-        pillar: "bans",
+        pillar: "accountFlags",
         weight: 38,
         contribution: 35,
         detail: `${steamBan.numberOfGameBans} game ban(s); last ban ${steamBan.daysSinceLastBan} day(s) ago.`,
       });
     }
     if (steamBan.communityBanned) {
+      hasHardBan = true;
       push(signals, {
         id: "community-ban",
         label: "Steam community ban",
-        pillar: "bans",
+        pillar: "accountFlags",
         weight: 15,
         contribution: 12,
         detail: "Account is community banned on Steam.",
@@ -125,10 +148,11 @@ export function assessRisk(input: RiskInput): RiskAssessment {
   }
 
   if (input.bans.faceit.length > 0) {
+    hasHardBan = true;
     push(signals, {
       id: "faceit-ban",
       label: "FACEIT ban history",
-      pillar: "bans",
+      pillar: "accountFlags",
       weight: 38,
       contribution: clamp(input.bans.faceit.length * 12, 12, 38),
       detail: `${input.bans.faceit.length} FACEIT ban record(s) found.`,
@@ -136,10 +160,11 @@ export function assessRisk(input: RiskInput): RiskAssessment {
   }
 
   if (input.bans.leetify.length > 0) {
+    hasHardBan = true;
     push(signals, {
       id: "leetify-platform-ban",
       label: "Platform bans (via Leetify)",
-      pillar: "bans",
+      pillar: "accountFlags",
       weight: 25,
       contribution: clamp(input.bans.leetify.length * 10, 10, 25),
       detail: input.bans.leetify
@@ -148,7 +173,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     });
   }
 
-  // ─── 1. Account Trust & History ─────────────────────────────────────────
+  // ─── Account Flags (friend pressure) + Anomalies (smurf / age) ──────────
   const friendSteam = input.bans.friends.steam;
   const friendTotal = input.bans.friends.friendCount;
   if (friendTotal != null) dataPoints += 1;
@@ -158,7 +183,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       push(signals, {
         id: "banned-steam-friends",
         label: "Many banned Steam friends",
-        pillar: "trust",
+        pillar: "accountFlags",
         weight: 22,
         contribution: clamp(
           Math.round(friendSteam.banned * 1.2 + ratio * 45),
@@ -190,7 +215,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       push(signals, {
         id: "banned-faceit-friends",
         label: "Many FACEIT-banned friends",
-        pillar: "trust",
+        pillar: "accountFlags",
         weight: 16,
         contribution: clamp(
           Math.round(friendFaceit.banned * 3 + ratio * 28),
@@ -219,7 +244,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       push(signals, {
         id: "young-high-elo",
         label: "Young account + high FACEIT ELO",
-        pillar: "trust",
+        pillar: "anomalies",
         weight: 28,
         contribution: clamp(
           Math.round((elo - 1800) / 40 + (180 - ageDays) / 8),
@@ -232,7 +257,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       push(signals, {
         id: "young-high-elo",
         label: "Relatively new account + high ELO",
-        pillar: "trust",
+        pillar: "anomalies",
         weight: 18,
         contribution: clamp(Math.round((elo - 2300) / 50), 6, 18),
         detail: `Account ~${ageDays} days old with FACEIT ELO ${elo}.`,
@@ -252,7 +277,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       push(signals, {
         id: "young-high-premier",
         label: "Young account + high Premier",
-        pillar: "trust",
+        pillar: "anomalies",
         weight: 20,
         contribution: clamp(Math.round((premier - 18000) / 500), 8, 20),
         detail: `Account ~${ageDays} days old with Premier ~${premier}.`,
@@ -275,7 +300,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       push(signals, {
         id: "low-playtime-high-perf",
         label: "Low CS2 playtime vs strong performance",
-        pillar: "trust",
+        pillar: "anomalies",
         weight: 20,
         contribution: clamp(Math.round((200 - playtime) / 9), 8, 20),
         detail: `${playtime}h CS2 playtime with elevated competitive performance.`,
@@ -300,21 +325,21 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     push(signals, {
       id: "few-matches-high-elo",
       label: "High ELO on small sample",
-      pillar: "trust",
+      pillar: "anomalies",
       weight: 14,
       contribution: 10,
       detail: `ELO ${elo} across only ${faceitMatches} FACEIT matches.`,
     });
   }
 
-  // ─── 2. Statistical deviations ──────────────────────────────────────────
+  // ─── Statistical Trust ──────────────────────────────────────────────────
   if (aim != null) {
     dataPoints += 1;
     if (aim >= 95) {
       push(signals, {
         id: "extreme-aim",
         label: "Extreme Leetify Aim rating",
-        pillar: "stats",
+        pillar: "statistical",
         weight: 26,
         contribution: clamp(Math.round((aim - 92) * 4), 14, 26),
         detail: `Aim rating ${aim} is in the extreme outlier range (>95).`,
@@ -323,7 +348,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       push(signals, {
         id: "very-high-aim",
         label: "Very high Leetify Aim rating",
-        pillar: "stats",
+        pillar: "statistical",
         weight: 14,
         contribution: clamp(Math.round((aim - 85) * 2), 6, 14),
         detail: `Aim rating ${aim} is elevated vs typical public samples.`,
@@ -343,7 +368,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       push(signals, {
         id: "inhuman-ttd",
         label: "Inhumanly low time to damage",
-        pillar: "stats",
+        pillar: "statistical",
         weight: 24,
         contribution: clamp(Math.round((250 - ttd) / 6), 12, 24),
         detail: `Average time to damage ${ttd}ms is far below typical human ranges.`,
@@ -352,7 +377,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       push(signals, {
         id: "low-time-to-dmg",
         label: "Very low time to damage",
-        pillar: "stats",
+        pillar: "statistical",
         weight: 16,
         contribution: clamp(Math.round((300 - ttd) / 8), 8, 16),
         detail: `Average time to damage ${ttd}ms is unusually fast.`,
@@ -371,7 +396,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     push(signals, {
       id: "extreme-crosshair",
       label: "Extreme crosshair placement",
-      pillar: "stats",
+      pillar: "statistical",
       weight: 14,
       contribution: clamp(Math.round((5.5 - preaim) * 4), 6, 14),
       detail: `Crosshair placement ${preaim}° is exceptionally tight.`,
@@ -384,7 +409,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       push(signals, {
         id: "extreme-hs",
         label: "Extreme FACEIT headshot %",
-        pillar: "stats",
+        pillar: "statistical",
         weight: 22,
         contribution: clamp(Math.round((faceitHs - 60) * 1.2), 10, 22),
         detail: `Average HS% ${faceitHs} is far above typical ranges.`,
@@ -393,7 +418,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       push(signals, {
         id: "high-hs",
         label: "Very high FACEIT headshot %",
-        pillar: "stats",
+        pillar: "statistical",
         weight: 12,
         contribution: 8,
         detail: `Average HS% ${faceitHs} is elevated.`,
@@ -413,7 +438,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       push(signals, {
         id: "extreme-kd",
         label: "Extreme FACEIT K/D",
-        pillar: "stats",
+        pillar: "statistical",
         weight: 18,
         contribution: clamp(Math.round((faceitKd - 1.8) * 15), 8, 18),
         detail: `Average K/D ${faceitKd} with ${faceitMatches ?? "unknown"} matches.`,
@@ -422,7 +447,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       push(signals, {
         id: "high-kd",
         label: "High FACEIT K/D",
-        pillar: "stats",
+        pillar: "statistical",
         weight: 10,
         contribution: 5,
         detail: `Average K/D ${faceitKd}.`,
@@ -436,7 +461,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       push(signals, {
         id: "steam-extreme-hs",
         label: "Extreme Steam lifetime HS%",
-        pillar: "stats",
+        pillar: "statistical",
         weight: 12,
         contribution: 9,
         detail: `Lifetime headshot rate ${steamHs}%.`,
@@ -458,7 +483,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       push(signals, {
         id: "wild-winrate",
         label: "Extreme win-rate cluster",
-        pillar: "stats",
+        pillar: "statistical",
         weight: 16,
         contribution: clamp(Math.round((wr - 65) * 1.1), 8, 16),
         detail: `Recent/average win rate ${wr}% is an extreme public outlier.`,
@@ -472,19 +497,19 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     }
   }
 
-  // Extreme aim + low TTD stack (compound)
+  // Extreme aim + low TTD → anomaly compound
   if (aim != null && aim >= 90 && ttd != null && ttd > 0 && ttd < 320) {
     push(signals, {
       id: "aim-ttd-compound",
       label: "High aim + very fast TTD",
-      pillar: "stats",
+      pillar: "anomalies",
       weight: 12,
       contribution: 10,
       detail: `Aim ${aim} combined with TTD ${ttd}ms is a strong anomaly pair.`,
     });
   }
 
-  // ─── 3. Consistency ─────────────────────────────────────────────────────
+  // ─── Anomalies (consistency / rank spikes) ──────────────────────────────
   if (seasons.length >= 2) {
     dataPoints += 1;
     const withPremier = seasons.filter(
@@ -495,7 +520,6 @@ export function assessRisk(input: RiskInput): RiskAssessment {
         (a, b) => a.seasonNumber - b.seasonNumber,
       );
 
-      // Peak-to-peak jump between consecutive seasons
       let maxJump = 0;
       let jumpFrom = chron[0];
       let jumpTo = chron[1];
@@ -513,14 +537,13 @@ export function assessRisk(input: RiskInput): RiskAssessment {
         push(signals, {
           id: "season-premier-spike",
           label: "Abrupt Premier season spike",
-          pillar: "consistency",
+          pillar: "anomalies",
           weight: 22,
           contribution: clamp(Math.round(maxJump / 700), 8, 22),
           detail: `${jumpFrom.title} peak ${jumpFrom.premierMax} → ${jumpTo.title} peak ${jumpTo.premierMax} (+${maxJump}).`,
         });
       }
 
-      // Career arc: early floor → latest peak (catches 1k → 22k across seasons)
       const early = chron.slice(0, Math.min(3, chron.length));
       const earlyFloor = Math.min(
         ...early.map((s) => s.premierMin ?? s.premierMax ?? Number.POSITIVE_INFINITY),
@@ -541,7 +564,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
           label: sparse
             ? "Huge Premier climb on limited games"
             : "Huge Premier career climb",
-          pillar: "consistency",
+          pillar: "anomalies",
           weight: 24,
           contribution: clamp(
             Math.round(careerRise / 900) + (verySparse ? 6 : sparse ? 3 : 0),
@@ -560,7 +583,6 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     }
   }
 
-  // Within-season swings + rapid rating gain per match
   let worstSwing: {
     title: string;
     seasonNumber: number;
@@ -579,10 +601,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       continue;
     }
     const swing = season.premierMax - season.premierMin;
-    if (
-      swing >= 7000 &&
-      (!worstSwing || swing > worstSwing.swing)
-    ) {
+    if (swing >= 7000 && (!worstSwing || swing > worstSwing.swing)) {
       worstSwing = {
         title: season.title,
         seasonNumber: season.seasonNumber,
@@ -593,13 +612,12 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       };
     }
 
-    // Few games, big climb inside one season (e.g. 14.5k→22k in 24 matches)
     const perMatch = swing / season.matches;
     if (season.matches <= 35 && swing >= 6000 && perMatch >= 200) {
       push(signals, {
         id: `rapid-season-${season.seasonNumber}`,
         label: `Rapid Premier climb (${season.title})`,
-        pillar: "consistency",
+        pillar: "anomalies",
         weight: 18,
         contribution: clamp(
           Math.round(swing / 1000 + (35 - season.matches) / 4),
@@ -616,20 +634,25 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     push(signals, {
       id: `season-swing-${worstSwing.seasonNumber}`,
       label: `Wild Premier swing (${worstSwing.title})`,
-      pillar: "consistency",
+      pillar: "anomalies",
       weight: 14,
       contribution: clamp(Math.round(worstSwing.swing / 1200), 6, 14),
       detail: `${worstSwing.title}: Premier ${worstSwing.min}→${worstSwing.max} across ${worstSwing.matches} matches.`,
     });
   }
 
-  // Solo-heavy + extreme aim can look like isolated boosting/smurf sessions
-  if (stack && stack.sampleSize >= 30 && stack.soloPercent >= 85 && aim != null && aim >= 90) {
+  if (
+    stack &&
+    stack.sampleSize >= 30 &&
+    stack.soloPercent >= 85 &&
+    aim != null &&
+    aim >= 90
+  ) {
     dataPoints += 1;
     push(signals, {
       id: "solo-extreme-aim",
       label: "Near-solo queue + extreme aim",
-      pillar: "consistency",
+      pillar: "anomalies",
       weight: 10,
       contribution: 8,
       detail: `${stack.soloPercent}% solo with Aim ${aim} — worth watching, not proof.`,
@@ -640,31 +663,46 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     dataPoints += 1;
   }
 
-  // ─── Score composition ──────────────────────────────────────────────────
+  // ─── Trust composition ──────────────────────────────────────────────────
   if (dataPoints === 0) {
-    return {
-      score: null,
-      confidence: "low",
-      level: "unknown",
-      signals: [],
-      redFlags: [],
-      protective: [],
-      disclaimer: DISCLAIMER,
-    };
+    return emptyAssessment("low");
   }
 
-  const trustScore = pillarCap(signals, "trust", 100);
-  const statsScore = pillarCap(signals, "stats", 100);
-  const consistencyScore = pillarCap(signals, "consistency", 100);
-  const bansScore = pillarCap(signals, "bans", 100);
+  const statisticalRisk = pillarRisk(signals, "statistical", 100);
+  const accountFlagsRisk = pillarRisk(signals, "accountFlags", 100);
+  const anomaliesRisk = pillarRisk(signals, "anomalies", 100);
 
-  const soft = Math.round(
-    trustScore * PILLAR_WEIGHT.trust +
-      statsScore * PILLAR_WEIGHT.stats +
-      consistencyScore * PILLAR_WEIGHT.consistency,
+  const pillars = {
+    statistical: 100 - statisticalRisk,
+    accountFlags: 100 - accountFlagsRisk,
+    anomalies: 100 - anomaliesRisk,
+  };
+
+  const weighted = Math.round(
+    pillars.statistical * PILLAR_WEIGHT.statistical +
+      pillars.accountFlags * PILLAR_WEIGHT.accountFlags +
+      pillars.anomalies * PILLAR_WEIGHT.anomalies,
   );
-  // Bans dominate when present; soft pillars fill the rest.
-  const score = clamp(Math.round(soft * 0.65 + bansScore * 0.85), 0, 100);
+
+  // Account bonus: aged + playtime + clean bans (CSRep-style +10%)
+  let accountBonus = 0;
+  if (!hasHardBan) {
+    if (ageDays != null && ageDays >= 1500) accountBonus += 4;
+    else if (ageDays != null && ageDays >= 730) accountBonus += 2;
+    if (playtime != null && playtime >= 1500) accountBonus += 4;
+    else if (playtime != null && playtime >= 800) accountBonus += 2;
+    if (
+      friendSteam &&
+      friendTotal != null &&
+      friendTotal >= 20 &&
+      friendSteam.banned === 0
+    ) {
+      accountBonus += 2;
+    }
+  }
+  accountBonus = clamp(accountBonus, 0, 10);
+
+  const score = clamp(weighted + accountBonus, 0, 100);
 
   let confidence: RiskAssessment["confidence"] = "low";
   if (dataPoints >= 6) confidence = "high";
@@ -676,14 +714,16 @@ export function assessRisk(input: RiskInput): RiskAssessment {
 
   if (concerning.length === 0) {
     return {
-      score: 0,
+      score,
       confidence,
-      level: "low",
+      level: levelFromTrust(score),
+      pillars,
+      accountBonus,
       signals: [
         {
           id: "clean",
           label: "No elevated public signals",
-          pillar: "stats",
+          pillar: "statistical",
           weight: 0,
           contribution: 0,
           detail:
@@ -699,7 +739,9 @@ export function assessRisk(input: RiskInput): RiskAssessment {
   return {
     score,
     confidence,
-    level: levelFromScore(score),
+    level: levelFromTrust(score),
+    pillars,
+    accountBonus,
     signals: concerning,
     redFlags: concerning.slice(0, 4),
     protective: protective.slice(0, 5),
