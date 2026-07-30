@@ -4,6 +4,7 @@ import { TrustScoreTooltip } from "@/components/TrustScoreTooltip";
 type Props = {
   trust: TrustAssessment;
   bans: PlayerBans;
+  embedded?: boolean;
 };
 
 function trustColor(score: number | null): string {
@@ -24,16 +25,16 @@ const PILLARS: Array<{
   key: keyof NonNullable<TrustAssessment["pillars"]>;
   label: string;
 }> = [
-  { key: "statistical", label: "Statistical Trust" },
-  { key: "accountFlags", label: "Account Flags" },
-  { key: "anomalies", label: "Anomalies" },
+  { key: "statistical", label: "Statistical Signals" },
+  { key: "accountFlags", label: "Account History" },
+  { key: "anomalies", label: "Pattern Irregularities" },
 ];
 
-export function TrustScorePanel({ trust, bans }: Props) {
+export function TrustScorePanel({ trust, bans, embedded = false }: Props) {
   const score = trust.score;
   const color = trustColor(score);
   const pillars = trust.pillars;
-  const ring = score == null ? 0 : Math.max(0, Math.min(100, score));
+  const bandLabel = levelLabel(trust.level).toUpperCase();
 
   const vac =
     bans.steam?.vacBanned || (bans.steam?.numberOfVacBans ?? 0) > 0
@@ -42,66 +43,99 @@ export function TrustScorePanel({ trust, bans }: Props) {
   const game = bans.steam?.numberOfGameBans ?? 0;
   const faceit = bans.faceit.length;
   const platform = bans.leetify.length;
+  const accountFlagsSignal = vac > 0 || game > 0 || faceit > 0 || platform > 0;
 
   return (
-    <section className="border border-[var(--border)] bg-[var(--surface)] p-5">
-      <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:gap-8">
-        <div className="flex shrink-0 flex-col items-center gap-2">
-          <div
-            className="relative grid h-28 w-28 place-items-center rounded-full"
-            style={{
-              background: `conic-gradient(${color} ${ring * 3.6}deg, var(--border) 0)`,
-            }}
-            aria-hidden
-          >
-            <div className="grid h-[5.25rem] w-[5.25rem] place-items-center rounded-full bg-[var(--surface)]">
-              <div className="text-center">
-                <TrustScoreTooltip trust={trust} />
-                <p
-                  className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.14em]"
-                  style={{ color }}
-                >
-                  {levelLabel(trust.level)}
-                </p>
-              </div>
-            </div>
-          </div>
-          <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">
-            Trust Score
-          </p>
-        </div>
+    <section
+      className={
+        embedded
+          ? "p-4"
+          : "border border-[#123e36] bg-[#111a1f] p-4 shadow-[0_0_0_1px_rgba(0,0,0,0.25)]"
+      }
+      style={
+        embedded
+          ? {
+              background:
+                "radial-gradient(ellipse 120% 80% at 20% 0%, rgba(36,247,182,0.08), transparent 55%), linear-gradient(180deg, rgba(17,26,31,0.95) 0%, rgba(17,26,31,0.78) 100%)",
+            }
+          : undefined
+      }
+    >
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#7fa8a0]">
+          Trust Score
+        </p>
+        <TrustScoreTooltip trust={trust} compact />
+      </div>
 
-        <div className="min-w-0 flex-1 space-y-3">
-          {pillars
-            ? PILLARS.map((p) => (
-                <PillarBar
-                  key={p.key}
-                  label={p.label}
-                  value={pillars[p.key]}
-                  color={trustColor(pillars[p.key])}
-                />
-              ))
-            : (
-              <p className="text-sm text-[var(--muted)]">
-                Not enough public data for pillar breakdown.
-              </p>
-            )}
+      <div className="mt-3 text-center">
+        <p
+          className="font-[family-name:var(--font-display)] text-6xl font-semibold leading-none tabular-nums"
+          style={{ color: score == null ? "var(--muted)" : "#1dffb6" }}
+        >
+          {score == null ? "—" : score}
+          <span className="ml-1 text-4xl align-top">%</span>
+        </p>
+        <p className="mt-3 inline-flex items-center justify-center rounded-sm bg-[#0f3c34] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#65ffcb]">
+          {bandLabel}
+        </p>
+      </div>
 
-          {trust.accountBonus > 0 ? (
-            <p className="text-xs text-[var(--ok)]">
-              Account Bonus{" "}
-              <span className="font-[family-name:var(--font-display)] font-semibold tabular-nums">
+      <div className="my-4 h-1 rounded-full bg-[#153830]">
+        <div
+          className="h-full rounded-full transition-[width]"
+          style={{
+            width: `${clampPct(score ?? 0)}%`,
+            background: "#24f7b6",
+          }}
+        />
+      </div>
+
+      <div className="space-y-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#7fa8a0]">
+          Breakdown
+        </p>
+
+        {pillars
+          ? PILLARS.map((p) => (
+              <PillarBar
+                key={p.key}
+                label={p.label}
+                value={pillars[p.key]}
+                color="#24f7b6"
+                muted={false}
+              />
+            ))
+          : (
+            <p className="text-sm text-[var(--muted)]">
+              Not enough public data for pillar breakdown.
+            </p>
+          )}
+
+        {trust.accountBonus > 0 ? (
+          <div className="border-t border-[#20433c] pt-2">
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="text-[#a8cbc4]">+ Trust Bonus</span>
+              <span className="font-[family-name:var(--font-display)] font-semibold tabular-nums text-[#24f7b6]">
                 +{trust.accountBonus}%
               </span>
-            </p>
-          ) : null}
-
-          <div className="flex flex-wrap gap-3 pt-1 text-[10px] uppercase tracking-[0.12em] text-[var(--muted)]">
-            <FlagChip label="VAC" count={vac} />
-            <FlagChip label="Game bans" count={game} />
-            <FlagChip label="FACEIT" count={faceit} />
-            <FlagChip label="Platform" count={platform} />
+            </div>
           </div>
+        ) : null}
+
+        <div className="border-t border-[#20433c] pt-2">
+          <p className="text-[10px] uppercase tracking-[0.14em] text-[#7fa8a0]">
+            Risk Indicators
+          </p>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+            <FlagChip label="VAC bans" count={vac} />
+            <FlagChip label="Game bans" count={game} />
+            <FlagChip label="FACEIT flags" count={faceit} />
+            <FlagChip label="Platform flags" count={platform} />
+          </div>
+          {!accountFlagsSignal ? (
+            <p className="mt-2 text-xs text-[#7fa8a0]">No risk indicators detected.</p>
+          ) : null}
         </div>
       </div>
     </section>
@@ -112,25 +146,30 @@ function PillarBar({
   label,
   value,
   color,
+  muted,
 }: {
   label: string;
   value: number;
   color: string;
+  muted: boolean;
 }) {
   return (
     <div>
-      <div className="mb-1 flex items-baseline justify-between gap-3">
-        <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+      <div className="mb-1.5 flex items-baseline justify-between gap-3">
+        <span className="text-sm text-[#d2ebe3]">
           {label}
         </span>
-        <span className="font-[family-name:var(--font-display)] text-sm font-semibold tabular-nums text-[var(--foreground)]">
+        <span className="font-[family-name:var(--font-display)] text-base font-semibold tabular-nums text-[#24f7b6]">
           {value}
         </span>
       </div>
-      <div className="h-1.5 overflow-hidden bg-[var(--border)]">
+      <div className="h-1.5 overflow-hidden rounded-full bg-[#173a33]">
         <div
           className="h-full transition-[width]"
-          style={{ width: `${clampPct(value)}%`, background: color }}
+          style={{
+            width: `${clampPct(value)}%`,
+            background: muted ? "var(--muted)" : color,
+          }}
         />
       </div>
     </div>
@@ -143,11 +182,11 @@ function FlagChip({ label, count }: { label: string; count: number }) {
     <span
       className={
         clean
-          ? "text-[var(--ok)]"
-          : "font-semibold text-[var(--danger)]"
+          ? "rounded-sm border border-[#1d4a40] bg-[#102922] px-2 py-1 text-[#8fd6bd]"
+          : "rounded-sm border border-[#5a2a2a] bg-[#2a1818] px-2 py-1 font-semibold text-[#ff8076]"
       }
     >
-      {count} {label}
+      {label}: {count}
     </span>
   );
 }

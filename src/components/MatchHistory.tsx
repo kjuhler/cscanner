@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import { formatMatchDate } from "@/lib/format";
 import { mapDisplayName } from "@/lib/maps";
 import type { FaceitMatch } from "@/lib/types";
@@ -5,9 +8,16 @@ import { MapIcon } from "@/components/MapIcon";
 
 type Props = {
   matches: FaceitMatch[];
+  faceitLevel?: number | null;
 };
 
-export function MatchHistory({ matches }: Props) {
+export function MatchHistory({ matches, faceitLevel = null }: Props) {
+  const PAGE_SIZE = 12;
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const visibleMatches = matches.slice(0, visibleCount);
+  const canShowMore = visibleCount < matches.length;
+  const canShowLess = visibleCount > PAGE_SIZE;
+
   return (
     <section className="border border-[var(--border)] bg-[var(--surface)]">
       <div className="border-b border-[var(--border)] px-5 py-3">
@@ -21,8 +31,9 @@ export function MatchHistory({ matches }: Props) {
           No FACEIT match history available.
         </p>
       ) : (
-        <ul className="divide-y divide-[var(--border)]">
-          {matches.map((match) => (
+        <>
+          <ul className="divide-y divide-[var(--border)]">
+          {visibleMatches.map((match) => (
             <li key={match.matchId}>
               <a
                 href={match.faceitUrl}
@@ -55,15 +66,40 @@ export function MatchHistory({ matches }: Props) {
                     </p>
                   </div>
                 </div>
-                {match.elo != null ? (
-                  <span className="font-mono text-xs text-[var(--muted)]">
-                    ELO {match.elo}
-                  </span>
-                ) : null}
+                <span className="font-mono text-xs text-[var(--muted)]">
+                  {faceitLevel != null ? `L${faceitLevel}` : "L—"}
+                  {match.elo != null ? ` · ELO ${match.elo}` : ""}
+                </span>
               </a>
             </li>
           ))}
-        </ul>
+          </ul>
+          <div className="flex items-center justify-between border-t border-[var(--border)] px-5 py-3">
+            <p className="text-xs text-[var(--muted)]">
+              Showing {visibleMatches.length} of {matches.length}
+            </p>
+            <div className="flex items-center gap-2">
+              {canShowLess ? (
+                <button
+                  type="button"
+                  onClick={() => setVisibleCount(PAGE_SIZE)}
+                  className="border border-[var(--border)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
+                >
+                  Show less
+                </button>
+              ) : null}
+              {canShowMore ? (
+                <button
+                  type="button"
+                  onClick={() => setVisibleCount((v) => Math.min(matches.length, v + PAGE_SIZE))}
+                  className="border border-[var(--border)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--foreground)] transition-colors hover:border-[var(--amber)]"
+                >
+                  Show more
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </>
       )}
     </section>
   );

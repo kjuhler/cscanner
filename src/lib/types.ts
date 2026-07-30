@@ -370,6 +370,7 @@ export type ScopeSourceInfo = {
 /** Per-match player row from Leetify /v3/profile/matches (serializable). */
 export type LeetifyMatchPlayerRow = {
   steamId: string;
+  matchId?: string | null;
   finishedAt: string | null;
   map: string | null;
   source: string | null;
@@ -378,6 +379,22 @@ export type LeetifyMatchPlayerRow = {
   preaim: number | null;
   /** Time to damage (ms) — Leetify `reaction_time`. */
   timeToDamageMs: number | null;
+  /** Ratio 0..1 in source payload. */
+  accuracyRaw: number | null;
+  /** Ratio 0..1 in source payload. */
+  accuracyEnemySpottedRaw: number | null;
+  /** Ratio 0..1 in source payload. */
+  sprayAccuracyRaw: number | null;
+  /** Ratio 0..1 in source payload. */
+  counterStrafeRatioRaw: number | null;
+  /** Ratio 0..1 in source payload. */
+  tradeKillSuccessRaw: number | null;
+  /** Avg utility value on death in source payload. */
+  utilityOnDeathAvg: number | null;
+  /** Avg HE damage per nade in source payload. */
+  heDamagePerNade: number | null;
+  /** Average flashes leading to kill in source payload. */
+  flashLeadingToKill: number | null;
   kills: number;
   deaths: number;
   assists: number;

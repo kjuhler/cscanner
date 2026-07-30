@@ -19,6 +19,7 @@ import { RankIcon } from "@/components/RankIcon";
 type Props = {
   matches: LeetifyRecentMatch[];
   steamId: string;
+  faceitLevel?: number | null;
 };
 
 function formatMs(value: number | null | undefined): string {
@@ -39,7 +40,13 @@ function Rating({ value }: { value: number | null }) {
   );
 }
 
-function MatchRank({ match }: { match: LeetifyRecentMatch }) {
+function MatchRank({
+  match,
+  faceitLevel,
+}: {
+  match: LeetifyRecentMatch;
+  faceitLevel: number | null;
+}) {
   if (match.premierRating != null) {
     return (
       <RankIcon kind="premier" rating={match.premierRating} size="sm" />
@@ -52,6 +59,9 @@ function MatchRank({ match }: { match: LeetifyRecentMatch }) {
   }
   if (match.csgoRank != null) {
     return <RankIcon kind="competitive" rank={match.csgoRank} size={56} />;
+  }
+  if (match.source?.toLowerCase().includes("faceit")) {
+    return <RankIcon kind="faceit" level={faceitLevel} size={22} />;
   }
   return (
     <span
@@ -262,8 +272,14 @@ function MatchDetailPanel({
   );
 }
 
-export function LeetifyMatchHistory({ matches, steamId }: Props) {
+export function LeetifyMatchHistory({
+  matches,
+  steamId,
+  faceitLevel = null,
+}: Props) {
+  const PAGE_SIZE = 12;
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [cache, setCache] = useState<
     Record<string, LeetifyMatchDetails | null>
   >({});
@@ -314,6 +330,9 @@ export function LeetifyMatchHistory({ matches, steamId }: Props) {
   if (matches.length === 0) return null;
 
   const bannedCount = matches.filter((m) => m.hasBannedPlayer).length;
+  const visibleMatches = matches.slice(0, visibleCount);
+  const canShowMore = visibleCount < matches.length;
+  const canShowLess = visibleCount > PAGE_SIZE;
 
   return (
     <section className="border border-[var(--border)] bg-[var(--surface)]">
@@ -345,7 +364,7 @@ export function LeetifyMatchHistory({ matches, steamId }: Props) {
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border)]">
-            {matches.map((match) => {
+            {visibleMatches.map((match) => {
               const finishedUnix = match.finishedAt
                 ? Math.floor(new Date(match.finishedAt).getTime() / 1000)
                 : null;
@@ -406,7 +425,7 @@ export function LeetifyMatchHistory({ matches, steamId }: Props) {
                       </span>
                     </td>
                     <td className="px-3 py-3">
-                      <MatchRank match={match} />
+                      <MatchRank match={match} faceitLevel={faceitLevel} />
                     </td>
                     <td className="px-3 py-3 font-mono tabular-nums">
                       <Rating value={match.leetifyRating} />
@@ -453,6 +472,31 @@ export function LeetifyMatchHistory({ matches, steamId }: Props) {
             })}
           </tbody>
         </table>
+      </div>
+      <div className="flex items-center justify-between border-t border-[var(--border)] px-5 py-3">
+        <p className="text-xs text-[var(--muted)]">
+          Showing {visibleMatches.length} of {matches.length}
+        </p>
+        <div className="flex items-center gap-2">
+          {canShowLess ? (
+            <button
+              type="button"
+              onClick={() => setVisibleCount(PAGE_SIZE)}
+              className="border border-[var(--border)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
+            >
+              Show less
+            </button>
+          ) : null}
+          {canShowMore ? (
+            <button
+              type="button"
+              onClick={() => setVisibleCount((v) => Math.min(matches.length, v + PAGE_SIZE))}
+              className="border border-[var(--border)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--foreground)] transition-colors hover:border-[var(--amber)]"
+            >
+              Show more
+            </button>
+          ) : null}
+        </div>
       </div>
     </section>
   );

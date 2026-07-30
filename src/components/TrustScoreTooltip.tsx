@@ -18,9 +18,10 @@ function levelLabel(level: TrustLevel): string {
 
 type Props = {
   trust: TrustAssessment;
+  compact?: boolean;
 };
 
-export function TrustScoreTooltip({ trust }: Props) {
+export function TrustScoreTooltip({ trust, compact = false }: Props) {
   const color = trustColor(trust.score);
   const tooltipId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -81,14 +82,19 @@ export function TrustScoreTooltip({ trust }: Props) {
     >
       <button
         type="button"
-        className="cursor-help font-[family-name:var(--font-display)] text-2xl font-bold leading-none tabular-nums underline decoration-dotted decoration-[var(--muted)] underline-offset-4"
-        style={{ color }}
+        className={
+          compact
+            ? "grid h-5 w-5 place-items-center rounded-full border border-[var(--border)] text-[10px] font-semibold text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
+            : "cursor-help font-[family-name:var(--font-display)] text-2xl font-bold leading-none tabular-nums underline decoration-dotted decoration-[var(--muted)] underline-offset-4"
+        }
+        style={compact ? undefined : { color }}
         aria-expanded={open}
         aria-describedby={open ? tooltipId : undefined}
         onFocus={openNow}
         onClick={() => setOpen((v) => !v)}
+        aria-label={compact ? "Open trust score details" : undefined}
       >
-        {trust.score == null ? "—" : `${trust.score}%`}
+        {compact ? "?" : trust.score == null ? "—" : `${trust.score}%`}
       </button>
 
       {open ? (
@@ -110,12 +116,12 @@ export function TrustScoreTooltip({ trust }: Props) {
 
           {trust.pillars ? (
             <ul className="mt-2 space-y-1 text-xs text-[var(--muted)]">
-              <li>Statistical Trust: {trust.pillars.statistical}</li>
-              <li>Account Flags: {trust.pillars.accountFlags}</li>
-              <li>Anomalies: {trust.pillars.anomalies}</li>
+              <li>Statistical Signals: {trust.pillars.statistical}</li>
+              <li>Account History: {trust.pillars.accountFlags}</li>
+              <li>Pattern Irregularities: {trust.pillars.anomalies}</li>
               {trust.accountBonus > 0 ? (
                 <li className="text-[var(--ok)]">
-                  Account Bonus: +{trust.accountBonus}%
+                  Trust Bonus: +{trust.accountBonus}%
                 </li>
               ) : null}
             </ul>
