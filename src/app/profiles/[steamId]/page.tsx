@@ -12,8 +12,7 @@ import {
 import { LeetifyMapsPanel } from "@/components/LeetifyMapsPanel";
 import { LeetifyMatchHistory } from "@/components/LeetifyMatchHistory";
 import { LeetifyTeammatesPanel } from "@/components/LeetifyTeammatesPanel";
-import { MatchHistory } from "@/components/MatchHistory";
-import { PlayerHeader } from "@/components/PlayerHeader";
+import { PlayerHeader, type ProfileTab } from "@/components/PlayerHeader";
 import { PremierPanel } from "@/components/PremierPanel";
 import { SeasonRanksPanel } from "@/components/SeasonRanksPanel";
 import { SiteHeader } from "@/components/SiteHeader";
@@ -32,7 +31,9 @@ import { isSteamId64 } from "@/lib/steam";
 
 type PageProps = {
   params: Promise<{ steamId: string }>;
+  searchParams: Promise<{ tab?: string }>;
 };
+
 
 export async function generateMetadata({
   params,
@@ -44,8 +45,9 @@ export async function generateMetadata({
   };
 }
 
-export default async function ProfilePage({ params }: PageProps) {
+export default async function ProfilePage({ params, searchParams }: PageProps) {
   const { steamId } = await params;
+  const resolvedSearchParams = await searchParams;
 
   if (!isSteamId64(steamId)) {
     notFound();
@@ -84,6 +86,30 @@ export default async function ProfilePage({ params }: PageProps) {
 
   const faceit = data.faceit;
   const last = data.cs2?.lastMatch;
+  const rowByMatchId = new Map(
+    (data.leetifyMatchRows ?? [])
+      .filter((r) => r.matchId)
+      .map((r) => [r.matchId as string, r]),
+  );
+  const leetifyMatchesForHistory = (data.leetify?.recentMatches ?? []).map((m) => {
+    const row = rowByMatchId.get(m.id);
+    if (!row) return m;
+    return {
+      ...m,
+      kills: m.kills ?? row.kills,
+      deaths: m.deaths ?? row.deaths,
+      kd: m.kd ?? (row.deaths > 0 ? Math.round((row.kills / row.deaths) * 100) / 100 : row.kills),
+    };
+  });
+  const tabParam = resolvedSearchParams.tab;
+  const activeTab: ProfileTab =
+    tabParam === "matches" ||
+    tabParam === "maps" ||
+    tabParam === "weapons" ||
+    tabParam === "banned-friends" ||
+    tabParam === "inventory"
+      ? tabParam
+      : "overview";
 
   return (
     <>
@@ -92,188 +118,213 @@ export default async function ProfilePage({ params }: PageProps) {
         <PlayerHeader
           steam={data.steam}
           extras={data.steamExtras}
-          steamId={steamId}
-          bannedFriends={data.bans.friends}
-          stackStats={data.leetify?.stackStats ?? null}
+          activeTab={activeTab}
+          premierRating={data.leetify?.premier ?? data.leetify?.premierRecent ?? null}
+          faceitLevel={faceit.player?.skillLevel ?? data.leetify?.faceitLevel ?? null}
+          faceitElo={faceit.player?.elo ?? data.leetify?.faceitElo ?? null}
         />
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(16rem,22rem)_1fr] lg:items-start">
-          <TrustScorePanel trust={data.trust} bans={data.bans} />
-          <StatsOverviewGrid
+        {activeTab === "overview" ? (
+          <>
+            <section className="border border-[var(--border)] bg-[var(--surface)]">
+              <div className="grid lg:grid-cols-[minmax(14rem,18rem)_1fr] lg:items-start lg:divide-x lg:divide-[var(--border)]">
+                <TrustScorePanel trust={data.trust} bans={data.bans} embedded />
+                <StatsOverviewGrid
+                  leetify={data.leetify}
+                  leetifyMatchRows={data.leetifyMatchRows}
+                  faceitPlayer={faceit.player}
+                  faceitStats={faceit.stats}
+                  cs2={data.cs2}
+                  playtimeHours={data.steamExtras.cs2PlaytimeHours}
+                  bannedFriends={data.bans.friends}
+                  embedded
+                />
+              </div>
+            </section>
+
+            <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
+              <SeasonRanksPanel
+                cs2={data.leetify?.seasonRanksCs2 ?? []}
+                csgo={data.leetify?.csgoRanks ?? null}
+              />
+              <CompetitiveRanksPanel ranks={data.leetify?.competitive ?? []} />
+            </div>
+
+            <BansPanel bans={data.bans} />
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <StatsGrid
+                title="Steam CS2 lifetime"
+                emptyMessage="Steam CS2 stats are private or unavailable for this profile."
+                items={[
+                  { label: "K/D", value: formatDecimal(data.cs2?.kd) },
+                  { label: "HS%", value: formatPercent(data.cs2?.hsPercent) },
+                  { label: "Kills", value: formatNumber(data.cs2?.kills) },
+                  { label: "Win rate", value: formatPercent(data.cs2?.winRate) },
+                  { label: "Accuracy", value: formatPercent(data.cs2?.accuracy) },
+                  { label: "Wins", value: formatNumber(data.cs2?.wins) },
+                  {
+                    label: "Rounds",
+                    value: formatNumber(data.cs2?.roundsPlayed),
+                  },
+                  { label: "Deaths", value: formatNumber(data.cs2?.deaths) },
+                ]}
+              />
+
+              <StatsGrid
+                title="FACEIT stats"
+                emptyMessage={
+                  faceit.player
+                    ? "FACEIT stats could not be loaded."
+                    : "No FACEIT CS2 profile linked to this Steam ID."
+                }
+                items={[
+                  {
+                    label: "ELO",
+                    value: formatNumber(
+                      faceit.player?.elo ?? data.leetify?.faceitElo ?? null,
+                    ),
+                  },
+                  {
+                    label: "Level",
+                    value:
+                      faceit.player?.skillLevel != null
+                        ? String(faceit.player.skillLevel)
+                        : data.leetify?.faceitLevel != null
+                          ? String(data.leetify.faceitLevel)
+                          : "—",
+                  },
+                  {
+                    label: "Matches",
+                    value: formatNumber(faceit.stats?.matches ?? null),
+                  },
+                  {
+                    label: "K/D",
+                    value: formatDecimal(faceit.stats?.kd ?? null),
+                  },
+                  {
+                    label: "HS%",
+                    value: formatPercent(faceit.stats?.hsPercent ?? null),
+                  },
+                  {
+                    label: "Win rate",
+                    value: formatPercent(faceit.stats?.winRate ?? null),
+                  },
+                  {
+                    label: "Wins",
+                    value: formatNumber(faceit.stats?.wins ?? null),
+                  },
+                  {
+                    label: "ADR",
+                    value: formatDecimal(faceit.stats?.averageAdr ?? null, 1),
+                  },
+                ]}
+                footer={
+                  faceit.player ? (
+                    <a
+                      href={faceit.player.faceitUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--amber)] hover:underline"
+                    >
+                      View FACEIT profile → {faceit.player.nickname}
+                    </a>
+                  ) : null
+                }
+              />
+            </div>
+
+            {last ? (
+              <StatsGrid
+                title="Steam last match"
+                items={[
+                  { label: "K/D", value: formatDecimal(last.kd) },
+                  { label: "Kills", value: formatNumber(last.kills) },
+                  { label: "Deaths", value: formatNumber(last.deaths) },
+                  { label: "MVPs", value: formatNumber(last.mvps) },
+                  { label: "Damage", value: formatNumber(last.damage) },
+                  { label: "Rounds", value: formatNumber(last.rounds) },
+                  {
+                    label: "Score",
+                    value: formatNumber(last.contributionScore),
+                  },
+                  { label: "—", value: "—" },
+                ]}
+              />
+            ) : null}
+
+            <LeetifyTeammatesPanel teammates={data.leetify?.teammates ?? []} />
+          </>
+        ) : null}
+
+        {activeTab === "matches" ? (
+          <section className="space-y-4">
+            <LeetifyMatchHistory
+              matches={leetifyMatchesForHistory}
+              steamId={steamId}
+              faceitLevel={faceit.player?.skillLevel ?? data.leetify?.faceitLevel ?? null}
+            />
+          </section>
+        ) : null}
+
+        {activeTab === "maps" ? (
+          <section className="space-y-4">
+            <CompetitiveRanksPanel ranks={data.leetify?.competitive ?? []} />
+            <LeetifyMapsPanel maps={data.leetify?.mapStats ?? []} />
+            <div className="grid gap-4 lg:grid-cols-2">
+              <MapStatsTable
+                title="FACEIT stats by map"
+                rows={faceitMapsToRows(faceit.maps)}
+                emptyMessage="FACEIT map breakdown unavailable (needs FACEIT API key + linked profile)."
+              />
+              <MapStatsTable
+                title="Steam map wins"
+                rows={steamMapWinsToRows(data.cs2?.mapWins ?? [])}
+                emptyMessage="Steam map win totals unavailable (private profile or no data)."
+              />
+            </div>
+          </section>
+        ) : null}
+
+        {activeTab === "weapons" ? (
+          <PremierPanel
+            steamId={steamId}
             leetify={data.leetify}
-            leetifyMatchRows={data.leetifyMatchRows}
             faceitPlayer={faceit.player}
-            faceitStats={faceit.stats}
-            cs2={data.cs2}
-          />
-        </div>
-
-        <PremierPanel
-          steamId={steamId}
-          leetify={data.leetify}
-          faceitPlayer={faceit.player}
-          kd={data.cs2?.kd ?? faceit.stats?.kd ?? null}
-        />
-
-        <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
-          <SeasonRanksPanel
-            cs2={data.leetify?.seasonRanksCs2 ?? []}
-            csgo={data.leetify?.csgoRanks ?? null}
-          />
-          <CompetitiveRanksPanel ranks={data.leetify?.competitive ?? []} />
-        </div>
-
-        <LeetifyMapsPanel maps={data.leetify?.mapStats ?? []} />
-
-        <BansPanel bans={data.bans} />
-
-        <BannedFriendsPanel friends={data.bans.friends} />
-
-        <div className="grid gap-4 lg:grid-cols-2">
-          <StatsGrid
-            title="Steam CS2 lifetime"
-            emptyMessage="Steam CS2 stats are private or unavailable for this profile."
-            items={[
-              { label: "K/D", value: formatDecimal(data.cs2?.kd) },
-              { label: "HS%", value: formatPercent(data.cs2?.hsPercent) },
-              { label: "Kills", value: formatNumber(data.cs2?.kills) },
-              { label: "Win rate", value: formatPercent(data.cs2?.winRate) },
-              { label: "Accuracy", value: formatPercent(data.cs2?.accuracy) },
-              { label: "Wins", value: formatNumber(data.cs2?.wins) },
-              {
-                label: "Rounds",
-                value: formatNumber(data.cs2?.roundsPlayed),
-              },
-              { label: "Deaths", value: formatNumber(data.cs2?.deaths) },
-            ]}
-          />
-
-          <StatsGrid
-            title="FACEIT stats"
-            emptyMessage={
-              faceit.player
-                ? "FACEIT stats could not be loaded."
-                : "No FACEIT CS2 profile linked to this Steam ID."
-            }
-            items={[
-              {
-                label: "ELO",
-                value: formatNumber(
-                  faceit.player?.elo ?? data.leetify?.faceitElo ?? null,
-                ),
-              },
-              {
-                label: "Level",
-                value:
-                  faceit.player?.skillLevel != null
-                    ? String(faceit.player.skillLevel)
-                    : data.leetify?.faceitLevel != null
-                      ? String(data.leetify.faceitLevel)
-                      : "—",
-              },
-              {
-                label: "Matches",
-                value: formatNumber(faceit.stats?.matches ?? null),
-              },
-              {
-                label: "K/D",
-                value: formatDecimal(faceit.stats?.kd ?? null),
-              },
-              {
-                label: "HS%",
-                value: formatPercent(faceit.stats?.hsPercent ?? null),
-              },
-              {
-                label: "Win rate",
-                value: formatPercent(faceit.stats?.winRate ?? null),
-              },
-              {
-                label: "Wins",
-                value: formatNumber(faceit.stats?.wins ?? null),
-              },
-              {
-                label: "ADR",
-                value: formatDecimal(faceit.stats?.averageAdr ?? null, 1),
-              },
-            ]}
-            footer={
-              faceit.player ? (
-                <a
-                  href={faceit.player.faceitUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--amber)] hover:underline"
-                >
-                  View FACEIT profile → {faceit.player.nickname}
-                </a>
-              ) : null
-            }
-          />
-        </div>
-
-        {last ? (
-          <StatsGrid
-            title="Steam last match"
-            items={[
-              { label: "K/D", value: formatDecimal(last.kd) },
-              { label: "Kills", value: formatNumber(last.kills) },
-              { label: "Deaths", value: formatNumber(last.deaths) },
-              { label: "MVPs", value: formatNumber(last.mvps) },
-              { label: "Damage", value: formatNumber(last.damage) },
-              { label: "Rounds", value: formatNumber(last.rounds) },
-              {
-                label: "Score",
-                value: formatNumber(last.contributionScore),
-              },
-              { label: "—", value: "—" },
-            ]}
+            kd={data.cs2?.kd ?? faceit.stats?.kd ?? null}
           />
         ) : null}
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <MapStatsTable
-            title="FACEIT stats by map"
-            rows={faceitMapsToRows(faceit.maps)}
-            emptyMessage="FACEIT map breakdown unavailable (needs FACEIT API key + linked profile)."
-          />
+        {activeTab === "inventory" ? (
+          <section className="space-y-4">
+            <TrackerSources
+              sources={buildTrackerSources({
+                steamId,
+                hasSteamStats: Boolean(
+                  data.cs2 && !data.cs2.privateOrUnavailable,
+                ),
+                faceitConfigured: Boolean(process.env.FACEIT_API_KEY),
+                faceitFound: Boolean(faceit.player),
+                faceitUrl: faceit.player?.faceitUrl ?? null,
+                leetifyFound: Boolean(data.leetify),
+                leetifyUrl: data.leetify?.profileUrl ?? null,
+                scopeFound: Boolean(data.scope),
+                scopeUrl: data.scope?.profileUrl ?? null,
+              })}
+            />
+            <ExternalLinks
+              steamId={steamId}
+              faceitUrl={faceit.player?.faceitUrl}
+              scopeUrl={data.scope?.profileUrl}
+            />
+          </section>
+        ) : null}
 
-          <MapStatsTable
-            title="Steam map wins"
-            rows={steamMapWinsToRows(data.cs2?.mapWins ?? [])}
-            emptyMessage="Steam map win totals unavailable (private profile or no data)."
-          />
-        </div>
-
-        <LeetifyMatchHistory
-          matches={data.leetify?.recentMatches ?? []}
-          steamId={steamId}
-        />
-
-        <MatchHistory matches={faceit.matches} />
-
-        <LeetifyTeammatesPanel teammates={data.leetify?.teammates ?? []} />
-
-        <TrackerSources
-          sources={buildTrackerSources({
-            steamId,
-            hasSteamStats: Boolean(
-              data.cs2 && !data.cs2.privateOrUnavailable,
-            ),
-            faceitConfigured: Boolean(process.env.FACEIT_API_KEY),
-            faceitFound: Boolean(faceit.player),
-            faceitUrl: faceit.player?.faceitUrl ?? null,
-            leetifyFound: Boolean(data.leetify),
-            leetifyUrl: data.leetify?.profileUrl ?? null,
-            scopeFound: Boolean(data.scope),
-            scopeUrl: data.scope?.profileUrl ?? null,
-          })}
-        />
-
-        <ExternalLinks
-          steamId={steamId}
-          faceitUrl={faceit.player?.faceitUrl}
-          scopeUrl={data.scope?.profileUrl}
-        />
+        {activeTab === "banned-friends" ? (
+          <section className="space-y-4">
+            <BannedFriendsPanel friends={data.bans.friends} />
+          </section>
+        ) : null}
 
         {data.errors.length > 0 ? (
           <details className="border border-[var(--border)] bg-[var(--surface)] px-5 py-3 text-xs text-[var(--muted)]">

@@ -166,7 +166,6 @@ async function fetchPublicApi(
   if (data && "error" in data) return null;
 
   const recentMatches: LeetifyRecentMatch[] = (data.recent_matches ?? [])
-    .slice(0, 12)
     .map((m) => {
       const outcomeRaw = (m.outcome || "").toLowerCase();
       const outcome: LeetifyRecentMatch["outcome"] =
@@ -392,7 +391,7 @@ async function fetchWebsiteProfile(
   const recentMatches: LeetifyRecentMatch[] =
     gamesAsMatches.length > 0
       ? gamesAsMatches
-      : recentRaw.slice(0, 12).map((m) => {
+      : recentRaw.map((m) => {
           const outcomeRaw = (m.result || "").toLowerCase();
           const outcome: LeetifyRecentMatch["outcome"] =
             outcomeRaw === "win" ||
