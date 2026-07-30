@@ -13,6 +13,11 @@ type ApiPlayerStats = {
   accuracy_enemy_spotted?: number;
   accuracy_head?: number;
   spray_accuracy?: number;
+  counter_strafing_shots_good_ratio?: number;
+  trade_kills_success_percentage?: number;
+  utility_on_death_avg?: number;
+  he_foes_damage_avg?: number;
+  flashbang_leading_to_kill?: number;
   kd_ratio?: number;
   total_kills?: number;
   total_deaths?: number;
