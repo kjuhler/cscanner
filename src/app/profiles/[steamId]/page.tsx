@@ -29,7 +29,6 @@ import {
   formatPercent,
 } from "@/lib/format";
 import { aggregatePlayer } from "@/lib/player/aggregate";
-import { compositeTrustScore } from "@/lib/player/composite";
 import { isCsapiConfigured } from "@/lib/csapi";
 import { isCsrepConfigured } from "@/lib/csrep";
 import { isFaceitConfigured } from "@/lib/faceit";
@@ -119,7 +118,6 @@ export default async function ProfilePage({ params, searchParams }: PageProps) {
       ? tabParam
       : "overview";
 
-  const headlineTrust = compositeTrustScore(data.composite, data.trust);
   const csrepConfigured = isCsrepConfigured();
   const csapiConfigured = isCsapiConfigured();
 
@@ -143,7 +141,6 @@ export default async function ProfilePage({ params, searchParams }: PageProps) {
                 <TrustScorePanel
                   trust={data.trust}
                   bans={data.bans}
-                  displayScore={headlineTrust}
                   embedded
                 />
                 <StatsOverviewGrid

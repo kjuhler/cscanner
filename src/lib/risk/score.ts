@@ -1,4 +1,5 @@
 import type {
+  CsapiStats,
   FaceitPlayer,
   FaceitStats,
   LeetifyProfile,
@@ -12,9 +13,14 @@ import type {
   TrustLevel,
   TrustPillarId,
 } from "@/lib/types";
+import {
+  classifyCombatMetrics,
+  countSeverity,
+  type MetricFlag,
+} from "@/lib/risk/metricFlags";
 
 const DISCLAIMER =
-  "Heuristic trust score only — based on public Steam / FACEIT / Leetify patterns. Not VAC, FACEIT AC, or proof of legitimacy.";
+  "Heuristic trust score only — based on public Steam / FACEIT / csapi patterns. Not VAC, FACEIT AC, or proof of legitimacy.";
 
 /** Pillar weights for the composite trust score (before account bonus). */
 const PILLAR_WEIGHT = {
@@ -30,6 +36,7 @@ type RiskInput = {
   faceitPlayer: FaceitPlayer | null;
   faceitStats: FaceitStats | null;
   leetify: LeetifyProfile | null;
+  csapi?: CsapiStats | null;
   bans: PlayerBans;
 };
 
@@ -76,8 +83,42 @@ function emptyAssessment(
     signals: [],
     redFlags: [],
     protective: [],
+    metricFlags: [],
     disclaimer: DISCLAIMER,
   };
+}
+
+function ratioToPct(n: number | null | undefined): number | null {
+  if (n == null || !Number.isFinite(n)) return null;
+  return n <= 1 ? n * 100 : n;
+}
+
+function combatFlagsFromInput(input: RiskInput): MetricFlag[] {
+  const c = input.csapi;
+  return classifyCombatMetrics({
+    kd: c?.kd ?? input.faceitStats?.kd ?? input.cs2?.kd ?? null,
+    adr: c?.adr ?? input.faceitStats?.averageAdr ?? null,
+    aimAccuracy: ratioToPct(c?.accuracy),
+    headAccuracy:
+      ratioToPct(c?.accuracyHead) ??
+      input.faceitStats?.hsPercent ??
+      input.leetify?.hsPercent ??
+      input.cs2?.hsPercent ??
+      null,
+    wallbang: ratioToPct(c?.wallbangKillPercent),
+    smoke: ratioToPct(c?.smokeKillPercent),
+    hltv: c?.hltvRating2 ?? null,
+    kast: ratioToPct(c?.kast),
+    winRate:
+      input.faceitStats?.winRate ??
+      input.leetify?.winrate ??
+      input.cs2?.winRate ??
+      null,
+    ttdMs: c?.timeToDamageMs ?? input.leetify?.timeToDamageMs ?? null,
+    reactionMs: c?.reactionTimeMs ?? null,
+    crosshairDeg: c?.crosshairPlacement ?? null,
+    preaimDeg: c?.preaim ?? input.leetify?.preaim ?? null,
+  });
 }
 
 export function assessRisk(input: RiskInput): RiskAssessment {
@@ -663,6 +704,45 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     dataPoints += 1;
   }
 
+  // ─── Combat metric severity (csapi / FACEIT / Steam) ────────────────────
+  const metricFlags = combatFlagsFromInput(input);
+  const flagged = metricFlags.filter((f) => f.severity !== "normal");
+  if (flagged.length > 0) {
+    dataPoints += 1;
+  }
+  for (const f of flagged) {
+    push(signals, {
+      id: `metric-${f.id}-${f.severity}`,
+      label: `${f.label}: ${f.severity}`,
+      pillar: "statistical",
+      weight: f.contribution,
+      contribution: f.contribution,
+      detail: f.detail,
+    });
+  }
+
+  const insaneCount = countSeverity(metricFlags, "insane");
+  const suspiciousCount = countSeverity(metricFlags, "suspicious");
+  if (insaneCount >= 2) {
+    push(signals, {
+      id: "insane-metric-cluster",
+      label: "Cluster of insane combat stats",
+      pillar: "anomalies",
+      weight: 35,
+      contribution: clamp(12 + insaneCount * 10, 22, 45),
+      detail: `${insaneCount} metrics in the insane band (CSRep-style outlier cluster).`,
+    });
+  } else if (insaneCount === 1 && suspiciousCount >= 2) {
+    push(signals, {
+      id: "elevated-outlier-cluster",
+      label: "Suspicious combat outlier cluster",
+      pillar: "anomalies",
+      weight: 22,
+      contribution: 16,
+      detail: `1 insane + ${suspiciousCount} suspicious metrics together.`,
+    });
+  }
+
   // ─── Trust composition ──────────────────────────────────────────────────
   if (dataPoints === 0) {
     return emptyAssessment("low");
@@ -700,9 +780,16 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       accountBonus += 2;
     }
   }
+  // Extreme combat outliers should not get the "aged account" halo.
+  if (insaneCount >= 2) accountBonus = 0;
+  else if (insaneCount === 1) accountBonus = Math.min(accountBonus, 2);
   accountBonus = clamp(accountBonus, 0, 10);
 
-  const score = clamp(weighted + accountBonus, 0, 100);
+  let score = clamp(weighted + accountBonus, 0, 100);
+  // Hard ceiling when combat stats are cartoonishly impossible (matches CSRep-ish floors).
+  if (insaneCount >= 4) score = Math.min(score, 18);
+  else if (insaneCount >= 3) score = Math.min(score, 28);
+  else if (insaneCount >= 2) score = Math.min(score, 40);
 
   let confidence: RiskAssessment["confidence"] = "low";
   if (dataPoints >= 6) confidence = "high";
@@ -727,11 +814,12 @@ export function assessRisk(input: RiskInput): RiskAssessment {
           weight: 0,
           contribution: 0,
           detail:
-            "Available public Steam / FACEIT / Leetify data does not show common heuristic risk patterns.",
+            "Available public Steam / FACEIT / csapi data does not show common heuristic risk patterns.",
         },
       ],
       redFlags: [],
       protective: protective.slice(0, 5),
+      metricFlags,
       disclaimer: DISCLAIMER,
     };
   }
@@ -745,6 +833,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     signals: concerning,
     redFlags: concerning.slice(0, 4),
     protective: protective.slice(0, 5),
+    metricFlags,
     disclaimer: DISCLAIMER,
   };
 }

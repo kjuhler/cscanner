@@ -284,6 +284,33 @@ export type LeetifyProfile = {
 
 export type TrustPillarId = "statistical" | "accountFlags" | "anomalies";
 
+/** Combat-stat severity band (CSRep-style). */
+export type MetricSeverity = "normal" | "elevated" | "suspicious" | "insane";
+
+export type MetricFlagId =
+  | "kd"
+  | "adr"
+  | "aimAccuracy"
+  | "headAccuracy"
+  | "wallbang"
+  | "smoke"
+  | "hltv"
+  | "kast"
+  | "winRate"
+  | "ttd"
+  | "reaction"
+  | "crosshair"
+  | "preaim";
+
+export type MetricFlag = {
+  id: MetricFlagId;
+  label: string;
+  value: number;
+  severity: MetricSeverity;
+  contribution: number;
+  detail: string;
+};
+
 export type RiskSignal = {
   id: string;
   label: string;
@@ -332,6 +359,8 @@ export type RiskAssessment = {
   redFlags: RiskSignal[];
   /** Patterns that pull toward a safer reading */
   protective: RiskProtectiveFactor[];
+  /** Per-metric severity (normal / elevated / suspicious / insane). */
+  metricFlags: MetricFlag[];
   disclaimer: string;
 };
 

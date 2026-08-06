@@ -5,10 +5,10 @@ import type { TrustAssessment, TrustLevel } from "@/lib/types";
 
 function trustColor(score: number | null): string {
   if (score == null) return "var(--muted)";
-  if (score >= 75) return "var(--ok)";
-  if (score >= 55) return "var(--amber)";
-  if (score >= 35) return "var(--warn)";
-  return "var(--danger)";
+  if (score >= 75) return "var(--trust-good)";
+  if (score >= 55) return "var(--trust-elevated)";
+  if (score >= 35) return "var(--trust-suspicious)";
+  return "var(--trust-insane)";
 }
 
 function levelLabel(level: TrustLevel): string {

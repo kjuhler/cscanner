@@ -568,6 +568,7 @@ export async function aggregatePlayer(
     faceitPlayer: faceitPlayerData,
     faceitStats,
     leetify,
+    csapi,
     bans,
   });
 

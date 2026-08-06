@@ -13,6 +13,16 @@
   --ok: #3dba7a;
   --warn: #e0a045;
   --danger: #e05a4f;
+  /* Metric severity (normal / højt / sus / insane) */
+  --metric-normal: #e8ecef;
+  --metric-elevated: #f0d24a;
+  --metric-suspicious: #ff7a6e;
+  --metric-insane: #c41e1e;
+  /* Trust score band colors (high trust = green) */
+  --trust-good: #3dba7a;
+  --trust-elevated: #f0d24a;
+  --trust-suspicious: #ff7a6e;
+  --trust-insane: #c41e1e;
   --font-sans: var(--font-body);
   --font-mono: var(--font-code);
 }

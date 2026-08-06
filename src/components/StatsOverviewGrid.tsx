@@ -12,6 +12,15 @@ import {
   filterMatchesByCount,
 } from "@/lib/leetify/windowStats";
 import { skillLikeTopPercent } from "@/lib/leetify/skillLike";
+import {
+  classifyCombatMetrics,
+  severityById,
+  severityLabelDa,
+  severityTextClass,
+  severityBorderClass,
+  type MetricFlagId,
+  type MetricSeverity,
+} from "@/lib/risk/metricFlags";
 import type {
   BannedFriendsStats,
   CsapiStats,
@@ -39,6 +48,7 @@ type Props = {
 
 type Metric = {
   label: string;
+  flagId?: MetricFlagId;
   value: ReactNode;
   topPercent?: number | null;
   faceitValue?: ReactNode;
@@ -154,24 +164,29 @@ export function StatsOverviewGrid({
   const metrics: Metric[] = [
     {
       label: "Time to Damage",
+      flagId: "ttd",
       value: formatMs(ttd),
       topPercent: skillLikeTopPercent("ttd", ttd),
     },
     {
       label: "Reaction Time",
+      flagId: "reaction",
       value: formatMs(reaction),
     },
     {
       label: "Crosshair Placement",
+      flagId: "crosshair",
       value: crosshair != null ? `${formatDecimal(crosshair)}°` : dash(),
     },
     {
       label: "Preaim",
+      flagId: "preaim",
       value: preaim != null ? `${formatDecimal(preaim)}°` : dash(),
       topPercent: skillLikeTopPercent("preaim", preaim),
     },
     {
       label: "K/D Ratio",
+      flagId: "kd",
       value: formatDecimal(kd),
       topPercent: skillLikeTopPercent("kd", kd),
       faceitValue:
@@ -181,6 +196,7 @@ export function StatsOverviewGrid({
     },
     {
       label: "ADR",
+      flagId: "adr",
       value: formatDecimal(adr, 1),
       faceitValue:
         faceitStats?.averageAdr != null
@@ -189,10 +205,12 @@ export function StatsOverviewGrid({
     },
     {
       label: "Aim Accuracy",
+      flagId: "aimAccuracy",
       value: formatPercent(aimAccuracy),
     },
     {
       label: "Head Accuracy",
+      flagId: "headAccuracy",
       value: formatPercent(headAccuracy),
       topPercent: skillLikeTopPercent("hs", headAccuracy),
       faceitValue:
@@ -202,22 +220,27 @@ export function StatsOverviewGrid({
     },
     {
       label: "Wallbang %",
+      flagId: "wallbang",
       value: formatPercent(wallbang),
     },
     {
       label: "Smoke Kill %",
+      flagId: "smoke",
       value: formatPercent(smoke),
     },
     {
       label: "HLTV Rating 2.0",
+      flagId: "hltv",
       value: formatDecimal(hltv),
     },
     {
       label: "KAST",
+      flagId: "kast",
       value: formatPercent(kast),
     },
     {
       label: "Win rate",
+      flagId: "winRate",
       value: formatPercent(winRate),
       faceitValue:
         faceitStats?.winRate != null
@@ -233,6 +256,23 @@ export function StatsOverviewGrid({
       value: bannedFriendsValue,
     },
   ];
+
+  const flags = classifyCombatMetrics({
+    kd,
+    adr,
+    aimAccuracy,
+    headAccuracy,
+    wallbang,
+    smoke,
+    hltv,
+    kast,
+    winRate,
+    ttdMs: ttd,
+    reactionMs: reaction,
+    crosshairDeg: crosshair,
+    preaimDeg: preaim,
+  });
+  const byId = severityById(flags);
 
   const sourceLabel = csapi
     ? "csapi · FACEIT / Steam"
@@ -303,29 +343,51 @@ export function StatsOverviewGrid({
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {metrics.map((m) => (
-          <div
-            key={m.label}
-            className="border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-3"
-          >
-            <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--muted)]">
-              {m.label}
-            </p>
-            <p className="mt-1 font-[family-name:var(--font-display)] text-xl font-bold tabular-nums text-[var(--foreground)]">
-              {m.value}
-              {m.topPercent != null ? (
-                <span className="ml-1.5 align-middle font-sans text-[11px] font-medium normal-case tracking-normal text-[var(--muted)]">
-                  (top {m.topPercent}%)
-                </span>
-              ) : null}
-            </p>
-            {m.faceitValue ? (
-              <p className="mt-1 text-[10px] tracking-[0.06em] text-[var(--muted)]">
-                {m.faceitValue}
+        {metrics.map((m) => {
+          const severity: MetricSeverity | undefined = m.flagId
+            ? byId[m.flagId]
+            : undefined;
+          const flagged =
+            severity === "elevated" ||
+            severity === "suspicious" ||
+            severity === "insane";
+          return (
+            <div
+              key={m.label}
+              className={`bg-[var(--bg-elevated)] px-3 py-3 border ${severityBorderClass(severity)}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--muted)]">
+                  {m.label}
+                </p>
+                {flagged && severity ? (
+                  <span
+                    className={`inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] ${severityTextClass(severity)}`}
+                    title={severityLabelDa(severity)}
+                  >
+                    <span aria-hidden>▲</span>
+                    {severityLabelDa(severity)}
+                  </span>
+                ) : null}
+              </div>
+              <p
+                className={`mt-1 font-[family-name:var(--font-display)] text-xl font-bold tabular-nums ${severityTextClass(severity)}`}
+              >
+                {m.value}
+                {m.topPercent != null ? (
+                  <span className="ml-1.5 align-middle font-sans text-[11px] font-medium normal-case tracking-normal text-[var(--muted)]">
+                    (top {m.topPercent}%)
+                  </span>
+                ) : null}
               </p>
-            ) : null}
-          </div>
-        ))}
+              {m.faceitValue ? (
+                <p className="mt-1 text-[10px] tracking-[0.06em] text-[var(--muted)]">
+                  {m.faceitValue}
+                </p>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
     </section>
   );

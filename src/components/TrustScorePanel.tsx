@@ -9,13 +9,64 @@ type Props = {
   displayScore?: number | null;
 };
 
+/** Trust palette: green (≥75) → yellow → light red → dark red. */
 function trustColor(score: number | null): string {
   if (score == null) return "var(--muted)";
-  if (score >= 90) return "var(--ok)";
-  if (score >= 75) return "var(--ok)";
-  if (score >= 55) return "var(--amber)";
-  if (score >= 35) return "var(--warn)";
-  return "var(--danger)";
+  if (score >= 75) return "var(--trust-good)";
+  if (score >= 55) return "var(--trust-elevated)";
+  if (score >= 35) return "var(--trust-suspicious)";
+  return "var(--trust-insane)";
+}
+
+function trustBand(score: number | null): {
+  color: string;
+  bg: string;
+  panelBg: string;
+  track: string;
+} {
+  if (score == null) {
+    return {
+      color: "var(--muted)",
+      bg: "rgba(139,150,163,0.12)",
+      panelBg:
+        "radial-gradient(ellipse 120% 80% at 20% 0%, rgba(139,150,163,0.08), transparent 55%), linear-gradient(180deg, rgba(17,26,31,0.95) 0%, rgba(17,26,31,0.78) 100%)",
+      track: "rgba(139,150,163,0.25)",
+    };
+  }
+  if (score >= 75) {
+    return {
+      color: "var(--trust-good)",
+      bg: "rgba(61,186,122,0.16)",
+      panelBg:
+        "radial-gradient(ellipse 120% 80% at 20% 0%, rgba(61,186,122,0.18), transparent 55%), linear-gradient(180deg, rgba(14,36,28,0.95) 0%, rgba(17,26,31,0.85) 100%)",
+      track: "rgba(61,186,122,0.28)",
+    };
+  }
+  if (score >= 55) {
+    return {
+      color: "var(--trust-elevated)",
+      bg: "rgba(240,210,74,0.16)",
+      panelBg:
+        "radial-gradient(ellipse 120% 80% at 20% 0%, rgba(240,210,74,0.16), transparent 55%), linear-gradient(180deg, rgba(40,34,14,0.95) 0%, rgba(17,26,31,0.85) 100%)",
+      track: "rgba(240,210,74,0.28)",
+    };
+  }
+  if (score >= 35) {
+    return {
+      color: "var(--trust-suspicious)",
+      bg: "rgba(255,122,110,0.16)",
+      panelBg:
+        "radial-gradient(ellipse 120% 80% at 20% 0%, rgba(255,122,110,0.16), transparent 55%), linear-gradient(180deg, rgba(42,22,20,0.95) 0%, rgba(17,26,31,0.85) 100%)",
+      track: "rgba(255,122,110,0.28)",
+    };
+  }
+  return {
+    color: "var(--trust-insane)",
+    bg: "rgba(196,30,30,0.2)",
+    panelBg:
+      "radial-gradient(ellipse 120% 80% at 20% 0%, rgba(196,30,30,0.22), transparent 55%), linear-gradient(180deg, rgba(42,12,12,0.95) 0%, rgba(17,26,31,0.85) 100%)",
+    track: "rgba(196,30,30,0.32)",
+  };
 }
 
 function levelLabel(level: TrustLevel): string {
@@ -32,6 +83,15 @@ const PILLARS: Array<{
   { key: "anomalies", label: "Pattern Irregularities" },
 ];
 
+function levelFromScore(score: number | null): TrustLevel {
+  if (score == null) return "unknown";
+  if (score >= 90) return "excellent";
+  if (score >= 75) return "good";
+  if (score >= 55) return "fair";
+  if (score >= 35) return "poor";
+  return "critical";
+}
+
 export function TrustScorePanel({
   trust,
   bans,
@@ -39,9 +99,11 @@ export function TrustScorePanel({
   displayScore,
 }: Props) {
   const score = displayScore ?? trust.score;
-  const color = trustColor(score);
+  const band = trustBand(score);
   const pillars = trust.pillars;
-  const bandLabel = levelLabel(trust.level).toUpperCase();
+  const bandLabel = levelLabel(
+    displayScore != null ? levelFromScore(displayScore) : trust.level,
+  ).toUpperCase();
 
   const vac =
     bans.steam?.vacBanned || (bans.steam?.numberOfVacBans ?? 0) > 0
@@ -57,19 +119,12 @@ export function TrustScorePanel({
       className={
         embedded
           ? "p-4"
-          : "border border-[#123e36] bg-[#111a1f] p-4 shadow-[0_0_0_1px_rgba(0,0,0,0.25)]"
+          : "border border-[var(--border)] bg-[var(--surface)] p-4"
       }
-      style={
-        embedded
-          ? {
-              background:
-                "radial-gradient(ellipse 120% 80% at 20% 0%, rgba(36,247,182,0.08), transparent 55%), linear-gradient(180deg, rgba(17,26,31,0.95) 0%, rgba(17,26,31,0.78) 100%)",
-            }
-          : undefined
-      }
+      style={{ background: band.panelBg }}
     >
       <div className="flex items-start justify-between gap-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#7fa8a0]">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
           Trust Score
         </p>
         <TrustScoreTooltip trust={trust} compact />
@@ -78,28 +133,34 @@ export function TrustScorePanel({
       <div className="mt-3 text-center">
         <p
           className="font-[family-name:var(--font-display)] text-6xl font-semibold leading-none tabular-nums"
-          style={{ color: score == null ? "var(--muted)" : "#1dffb6" }}
+          style={{ color: band.color }}
         >
           {score == null ? "—" : score}
           <span className="ml-1 text-4xl align-top">%</span>
         </p>
-        <p className="mt-3 inline-flex items-center justify-center rounded-sm bg-[#0f3c34] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#65ffcb]">
+        <p
+          className="mt-3 inline-flex items-center justify-center rounded-sm px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em]"
+          style={{ background: band.bg, color: band.color }}
+        >
           {bandLabel}
         </p>
       </div>
 
-      <div className="my-4 h-1 rounded-full bg-[#153830]">
+      <div
+        className="my-4 h-1 rounded-full"
+        style={{ background: band.track }}
+      >
         <div
           className="h-full rounded-full transition-[width]"
           style={{
             width: `${clampPct(score ?? 0)}%`,
-            background: "#24f7b6",
+            background: band.color,
           }}
         />
       </div>
 
       <div className="space-y-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#7fa8a0]">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
           Breakdown
         </p>
 
@@ -109,8 +170,8 @@ export function TrustScorePanel({
                 key={p.key}
                 label={p.label}
                 value={pillars[p.key]}
-                color="#24f7b6"
-                muted={false}
+                color={trustColor(pillars[p.key])}
+                track={trustBand(pillars[p.key]).track}
               />
             ))
           : (
@@ -120,18 +181,21 @@ export function TrustScorePanel({
           )}
 
         {trust.accountBonus > 0 ? (
-          <div className="border-t border-[#20433c] pt-2">
+          <div className="border-t border-[var(--border)] pt-2">
             <div className="flex items-center justify-between gap-3 text-sm">
-              <span className="text-[#a8cbc4]">+ Trust Bonus</span>
-              <span className="font-[family-name:var(--font-display)] font-semibold tabular-nums text-[#24f7b6]">
+              <span className="text-[var(--muted)]">+ Trust Bonus</span>
+              <span
+                className="font-[family-name:var(--font-display)] font-semibold tabular-nums"
+                style={{ color: "var(--trust-good)" }}
+              >
                 +{trust.accountBonus}%
               </span>
             </div>
           </div>
         ) : null}
 
-        <div className="border-t border-[#20433c] pt-2">
-          <p className="text-[10px] uppercase tracking-[0.14em] text-[#7fa8a0]">
+        <div className="border-t border-[var(--border)] pt-2">
+          <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
             Risk Indicators
           </p>
           <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
@@ -141,7 +205,9 @@ export function TrustScorePanel({
             <FlagChip label="Platform flags" count={platform} />
           </div>
           {!accountFlagsSignal ? (
-            <p className="mt-2 text-xs text-[#7fa8a0]">No risk indicators detected.</p>
+            <p className="mt-2 text-xs text-[var(--muted)]">
+              No risk indicators detected.
+            </p>
           ) : null}
         </div>
       </div>
@@ -153,29 +219,33 @@ function PillarBar({
   label,
   value,
   color,
-  muted,
+  track,
 }: {
   label: string;
   value: number;
   color: string;
-  muted: boolean;
+  track: string;
 }) {
   return (
     <div>
       <div className="mb-1.5 flex items-baseline justify-between gap-3">
-        <span className="text-sm text-[#d2ebe3]">
-          {label}
-        </span>
-        <span className="font-[family-name:var(--font-display)] text-base font-semibold tabular-nums text-[#24f7b6]">
+        <span className="text-sm text-[var(--foreground)]">{label}</span>
+        <span
+          className="font-[family-name:var(--font-display)] text-base font-semibold tabular-nums"
+          style={{ color }}
+        >
           {value}
         </span>
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-[#173a33]">
+      <div
+        className="h-1.5 overflow-hidden rounded-full"
+        style={{ background: track }}
+      >
         <div
           className="h-full transition-[width]"
           style={{
             width: `${clampPct(value)}%`,
-            background: muted ? "var(--muted)" : color,
+            background: color,
           }}
         />
       </div>
@@ -189,8 +259,8 @@ function FlagChip({ label, count }: { label: string; count: number }) {
     <span
       className={
         clean
-          ? "rounded-sm border border-[#1d4a40] bg-[#102922] px-2 py-1 text-[#8fd6bd]"
-          : "rounded-sm border border-[#5a2a2a] bg-[#2a1818] px-2 py-1 font-semibold text-[#ff8076]"
+          ? "rounded-sm border border-[var(--trust-good)]/30 bg-[var(--trust-good)]/10 px-2 py-1 text-[var(--trust-good)]"
+          : "rounded-sm border border-[var(--trust-insane)]/40 bg-[var(--trust-insane)]/10 px-2 py-1 font-semibold text-[var(--trust-suspicious)]"
       }
     >
       {label}: {count}
