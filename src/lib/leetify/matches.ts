@@ -1,5 +1,10 @@
 import "server-only";
 
+import {
+  apiProxyHeaders,
+  apiProxyUrl,
+  isApiProxyEnabled,
+} from "@/lib/apiProxy";
 import type { LeetifyMatchPlayerRow } from "@/lib/types";
 
 export type { LeetifyMatchPlayerRow };
@@ -70,16 +75,19 @@ function scaleLeetifyRating(n: number | null | undefined): number | null {
   return round2(n);
 }
 
-function leetifyHeaders(): HeadersInit {
+function leetifyHeaders(): Record<string, string> {
+  const useProxy = isApiProxyEnabled();
   const key = process.env.LEETIFY_API_KEY?.trim();
   const headers: Record<string, string> = {
     Accept: "application/json",
     Origin: "https://leetify.com",
     Referer: "https://leetify.com/",
   };
+  if (useProxy) {
+    return apiProxyHeaders(headers);
+  }
   if (key) {
     headers.Authorization = `Bearer ${key}`;
-    headers._leetify_key = key;
   }
   return headers;
 }
@@ -169,10 +177,14 @@ export async function getLeetifyProfileMatches(
   limit = 100,
 ): Promise<LeetifyMatchPlayerRow[]> {
   const capped = Math.max(1, Math.min(limit, 100));
-  const url =
-    `https://api-public.cs-prod.leetify.com/v3/profile/matches` +
-    `?steam64_id=${encodeURIComponent(steamId)}` +
-    `&limit=${capped}`;
+  const url = isApiProxyEnabled()
+    ? apiProxyUrl("leetify-public", "v3/profile/matches", {
+        steam64_id: steamId,
+        limit: String(capped),
+      })
+    : `https://api-public.cs-prod.leetify.com/v3/profile/matches` +
+      `?steam64_id=${encodeURIComponent(steamId)}` +
+      `&limit=${capped}`;
 
   const res = await fetch(url, {
     headers: leetifyHeaders(),

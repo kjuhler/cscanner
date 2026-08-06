@@ -367,6 +367,180 @@ export type ScopeSourceInfo = {
   filledFields: string[];
 };
 
+/** Window stats from csapi.kju.dk/{steamId64}. Ratios are 0–1. */
+export type CsapiStats = {
+  steamId: string;
+  timeToDamageMs: number | null;
+  reactionTimeMs: number | null;
+  crosshairPlacement: number | null;
+  preaim: number | null;
+  kd: number | null;
+  adr: number | null;
+  /** 0–1 */
+  accuracy: number | null;
+  /** 0–1 */
+  accuracyHead: number | null;
+  /** 0–1 */
+  wallbangKillPercent: number | null;
+  /** 0–1 */
+  smokeKillPercent: number | null;
+  hltvRating2: number | null;
+  /** 0–1 */
+  kast: number | null;
+  profileUrl: string;
+};
+
+export type CsrepMetric = {
+  value: number | null;
+  delta: number | null;
+  verdict: string | null;
+};
+
+/** Parsed window from GET /players/{id}/stats (undocumented). */
+export type CsrepPlayerStats = {
+  fromMatch: number | null;
+  matchCount: number | null;
+  sampleLabel: string | null;
+  metrics: {
+    timeToDamageMs: CsrepMetric;
+    reactionMs: CsrepMetric;
+    crosshairDeg: CsrepMetric;
+    preaimDeg: CsrepMetric;
+    kd: CsrepMetric;
+    adr: CsrepMetric;
+    aimAccuracy: CsrepMetric;
+    headAccuracy: CsrepMetric;
+    wallbangPct: CsrepMetric;
+    smokeKillPct: CsrepMetric;
+    hltvRating: CsrepMetric;
+    kast: CsrepMetric;
+  };
+  rawKeys: string[];
+};
+
+/** CSRep partner API player + optional stats window. */
+export type CsrepProfile = {
+  id: string | null;
+  steamId: string;
+  name: string | null;
+  avatar: string | null;
+  trustRating: number | null;
+  premierElo: number | null;
+  cs2Hours: number | null;
+  inventoryValue: number | null;
+  steamLevel: number | null;
+  steamCreatedAt: string | null;
+  faceitId: string | null;
+  faceitUrl: string | null;
+  faceitLevel: number | null;
+  faceitElo: number | null;
+  faceitLatestMatchDate: string | null;
+  refreshedAt: string | null;
+  bans: Record<string, unknown> | null;
+  commendations: Record<string, unknown> | null;
+  mapRanks: Record<string, unknown> | null;
+  privacy: Record<string, unknown> | null;
+  anomalies: number | null;
+  sba: number | null;
+  sbaDelta: number | null;
+  metrics: CsrepPlayerStats["metrics"];
+  stats: CsrepPlayerStats | null;
+  profileUrl: string;
+  rawKeys: string[];
+};
+
+export type CompositeMetric = {
+  value: number;
+  sources: string[];
+};
+
+export type CompositeScores = {
+  trust: CompositeMetric | null;
+  kd: CompositeMetric | null;
+  hsPercent: CompositeMetric | null;
+  winRate: CompositeMetric | null;
+  aim: CompositeMetric | null;
+  faceitElo: CompositeMetric | null;
+  timeToDamageMs: CompositeMetric | null;
+  preaim: CompositeMetric | null;
+};
+
+/** Cheat-signal severity from csst.at color classes (red/orange/neutral). */
+export type CsstatSignal = "high" | "elevated" | "normal" | null;
+
+export type CsstatStat = {
+  value: number | null;
+  raw: string | null;
+  signal: CsstatSignal;
+};
+
+export type CsstatSteamSection = {
+  name: string | null;
+  friendCode: string | null;
+  registered: string | null;
+  country: string | null;
+  games: number | null;
+  playtimeHours: number | null;
+  cs2PlaytimeHours: number | null;
+  inventoryValue: string | null;
+};
+
+export type CsstatFaceitSection = {
+  nickname: string | null;
+  profileUrl: string | null;
+  banReason: string | null;
+  banDate: string | null;
+  registered: string | null;
+  country: string | null;
+  elo: number | null;
+  peakElo: number | null;
+  skillLevel: number | null;
+  winRate: number | null;
+  matches: number | null;
+  hsPercent: number | null;
+  kd: number | null;
+};
+
+export type CsstatLeetifySection = {
+  aim: CsstatStat | null;
+  utility: CsstatStat | null;
+  positioning: CsstatStat | null;
+  clutch: CsstatStat | null;
+  opening: CsstatStat | null;
+  kd: CsstatStat | null;
+  rating: CsstatStat | null;
+  preaim: CsstatStat | null;
+  timeToDamageMs: CsstatStat | null;
+  avgHeDamage: CsstatStat | null;
+  peakRating: CsstatStat | null;
+  winRate: CsstatStat | null;
+  matches: number | null;
+  bannedMatesPercent: number | null;
+};
+
+export type CsstatGameCoordinatorSection = {
+  xpLevel: number | null;
+  commendationsTotal: number | null;
+  friendly: number | null;
+  leader: number | null;
+  teacher: number | null;
+};
+
+export type CsstatProfile = {
+  profileUrl: string;
+  steam: CsstatSteamSection | null;
+  faceit: CsstatFaceitSection | null;
+  leetify: CsstatLeetifySection | null;
+  leetifyExtra: {
+    kd: number | null;
+    bannedMatesPercent: number | null;
+    winRate: number | null;
+  } | null;
+  gameCoordinator: CsstatGameCoordinatorSection | null;
+  /** Aim/Leetify fields filled into our Leetify profile from csst.at. */
+  filledFields: string[];
+};
+
 /** Per-match player row from Leetify /v3/profile/matches (serializable). */
 export type LeetifyMatchPlayerRow = {
   steamId: string;
@@ -457,6 +631,14 @@ export type PlayerAggregate = {
   leetifyMatchRows: LeetifyMatchPlayerRow[] | null;
   /** Scope ratings fetch (aim fallback); null when unavailable. */
   scope: ScopeSourceInfo | null;
+  /** Aggregated Steam/FACEIT/Leetify/GC snapshot from csst.at HTMX fragments. */
+  csstat: CsstatProfile | null;
+  /** Primary aim/combat window from csapi.kju.dk. */
+  csapi: CsapiStats | null;
+  /** CSRep partner API (trust + optional stats window). */
+  csrep: CsrepProfile | null;
+  /** Averaged metrics where ≥2 sources agree. */
+  composite: CompositeScores;
   bans: PlayerBans;
   /** CSRep-style trust assessment (higher score = more trustworthy). */
   trust: TrustAssessment;

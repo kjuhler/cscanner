@@ -25,8 +25,16 @@ export function ExternalLinks({ steamId, faceitUrl, scopeUrl }: Props) {
       href: `https://leetify.com/app/profile/${steamId}`,
     },
     {
+      label: "csst.at",
+      href: `https://csst.at/profile/${steamId}`,
+    },
+    {
       label: "CSStats",
       href: `https://csstats.gg/player/${steamId}`,
+    },
+    {
+      label: "CSRep",
+      href: `https://csrep.gg/player/${steamId}`,
     },
     {
       label: "Scope.gg",

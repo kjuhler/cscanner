@@ -1,3 +1,8 @@
+import {
+  apiProxyHeaders,
+  apiProxyUrl,
+  isApiProxyEnabled,
+} from "@/lib/apiProxy";
 import type {
   Cs2SeasonRank,
   CsgoRankSummary,
@@ -125,37 +130,47 @@ function scalePct(n: number | null | undefined): number | null {
   return round1(n);
 }
 
-function leetifyHeaders(): HeadersInit {
+function leetifyHeaders(): Record<string, string> {
+  const useProxy = isApiProxyEnabled();
   const key = process.env.LEETIFY_API_KEY?.trim();
   const headers: Record<string, string> = {
     Accept: "application/json",
     Origin: "https://leetify.com",
     Referer: "https://leetify.com/",
   };
+  if (useProxy) {
+    return apiProxyHeaders(headers);
+  }
   if (key) {
     headers.Authorization = `Bearer ${key}`;
-    headers._leetify_key = key;
   }
   return headers;
 }
 
-function siteHeaders(steamId: string): HeadersInit {
-  return {
+function siteHeaders(steamId: string): Record<string, string> {
+  const headers: Record<string, string> = {
     Accept: "application/json",
     Origin: "https://leetify.com",
     Referer: `https://leetify.com/app/profile/${steamId}`,
     "User-Agent":
       "Mozilla/5.0 (compatible; ProfileCheck/1.0; +https://localhost)",
   };
+  return isApiProxyEnabled() ? apiProxyHeaders(headers) : headers;
 }
 
 async function fetchPublicApi(
   steamId: string,
 ): Promise<LeetifyProfile | null> {
-  const res = await fetch(
-    `https://api-public.cs-prod.leetify.com/v3/profile?steam64_id=${encodeURIComponent(steamId)}`,
-    { headers: leetifyHeaders(), next: { revalidate: 180 } },
-  );
+  const url = isApiProxyEnabled()
+    ? apiProxyUrl("leetify-public", "v3/profile", {
+        steam64_id: steamId,
+      })
+    : `https://api-public.cs-prod.leetify.com/v3/profile?steam64_id=${encodeURIComponent(steamId)}`;
+
+  const res = await fetch(url, {
+    headers: leetifyHeaders(),
+    next: { revalidate: 180 },
+  });
 
   if (res.status === 404) return null;
   if (!res.ok) {
@@ -273,7 +288,11 @@ type WebsiteFullProfile = {
 };
 
 async function fetchMiniProfile(steamId: string): Promise<MiniProfile | null> {
-  const res = await fetch(`${SITE_ORIGIN}/api/mini-profiles/${steamId}`, {
+  const url = isApiProxyEnabled()
+    ? apiProxyUrl("leetify-site", `api/mini-profiles/${steamId}`)
+    : `${SITE_ORIGIN}/api/mini-profiles/${steamId}`;
+
+  const res = await fetch(url, {
     headers: siteHeaders(steamId),
     next: { revalidate: 180 },
   });
@@ -292,7 +311,11 @@ async function fetchMiniProfile(steamId: string): Promise<MiniProfile | null> {
 async function fetchFullWebsiteProfile(
   steamId: string,
 ): Promise<WebsiteFullProfile | null> {
-  const res = await fetch(`${SITE_ORIGIN}/api/profile/id/${steamId}`, {
+  const url = isApiProxyEnabled()
+    ? apiProxyUrl("leetify-site", `api/profile/id/${steamId}`)
+    : `${SITE_ORIGIN}/api/profile/id/${steamId}`;
+
+  const res = await fetch(url, {
     headers: siteHeaders(steamId),
     cache: "no-store",
   });

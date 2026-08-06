@@ -1,5 +1,10 @@
 import "server-only";
 
+import {
+  apiProxyHeaders,
+  apiProxyUrl,
+  isApiProxyEnabled,
+} from "@/lib/apiProxy";
 import type { LeetifyMatchDetails, LeetifyMatchPlayer } from "@/lib/types";
 
 type ApiTeamScore = {
@@ -62,16 +67,19 @@ function scalePct(n: number | null | undefined): number | null {
   return round1(n);
 }
 
-function leetifyHeaders(): HeadersInit {
+function leetifyHeaders(): Record<string, string> {
+  const useProxy = isApiProxyEnabled();
   const key = process.env.LEETIFY_API_KEY?.trim();
   const headers: Record<string, string> = {
     Accept: "application/json",
     Origin: "https://leetify.com",
     Referer: "https://leetify.com/",
   };
+  if (useProxy) {
+    return apiProxyHeaders(headers);
+  }
   if (key) {
     headers.Authorization = `Bearer ${key}`;
-    headers._leetify_key = key;
   }
   return headers;
 }
@@ -131,13 +139,14 @@ export async function getLeetifyMatch(
     throw new Error("Invalid Leetify game id.");
   }
 
-  const res = await fetch(
-    `https://api-public.cs-prod.leetify.com/v2/matches/${encodeURIComponent(id)}`,
-    {
-      headers: leetifyHeaders(),
-      next: { revalidate: 300 },
-    },
-  );
+  const url = isApiProxyEnabled()
+    ? apiProxyUrl("leetify-public", `v2/matches/${encodeURIComponent(id)}`)
+    : `https://api-public.cs-prod.leetify.com/v2/matches/${encodeURIComponent(id)}`;
+
+  const res = await fetch(url, {
+    headers: leetifyHeaders(),
+    next: { revalidate: 300 },
+  });
 
   if (res.status === 404) return null;
   if (!res.ok) {

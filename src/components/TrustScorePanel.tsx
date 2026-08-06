@@ -5,6 +5,8 @@ type Props = {
   trust: TrustAssessment;
   bans: PlayerBans;
   embedded?: boolean;
+  /** When set (e.g. composite trust), shown as the headline score. */
+  displayScore?: number | null;
 };
 
 function trustColor(score: number | null): string {
@@ -30,8 +32,13 @@ const PILLARS: Array<{
   { key: "anomalies", label: "Pattern Irregularities" },
 ];
 
-export function TrustScorePanel({ trust, bans, embedded = false }: Props) {
-  const score = trust.score;
+export function TrustScorePanel({
+  trust,
+  bans,
+  embedded = false,
+  displayScore,
+}: Props) {
+  const score = displayScore ?? trust.score;
   const color = trustColor(score);
   const pillars = trust.pillars;
   const bandLabel = levelLabel(trust.level).toUpperCase();

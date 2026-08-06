@@ -14,6 +14,7 @@ export type ProfileTab =
   | "maps"
   | "weapons"
   | "inventory"
+  | "sources"
   | "banned-friends";
 
 type Props = {
@@ -45,6 +46,7 @@ export function PlayerHeader({
       key: "banned-friends" as const,
       href: "?tab=banned-friends",
     },
+    { label: "Sources", key: "sources" as const, href: "?tab=sources" },
     { label: "Inventory", key: "inventory" as const, href: "?tab=inventory" },
   ] as const;
 

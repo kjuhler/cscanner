@@ -20,6 +20,14 @@ type BuildArgs = {
   leetifyUrl: string | null;
   scopeFound: boolean;
   scopeUrl: string | null;
+  csstatFound: boolean;
+  csstatUrl: string | null;
+  csapiFound: boolean;
+  csapiUrl: string | null;
+  csapiConfigured: boolean;
+  csrepConfigured: boolean;
+  csrepFound: boolean;
+  csrepUrl: string | null;
 };
 
 function scopeProfileHref(steamId64: string, scopeUrl: string | null): string {
@@ -50,13 +58,28 @@ export function buildTrackerSources(args: BuildArgs): TrackerSource[] {
           ? "live"
           : "empty",
       detail: !args.faceitConfigured
-        ? "Add FACEIT_API_KEY to load ELO, HS%, matches"
+        ? "Add FACEIT_API_KEY or API_PROXY_* to load ELO, HS%, matches"
         : args.faceitFound
           ? "ELO, K/D, HS%, win rate, map stats, recent matches"
           : "No FACEIT CS2 profile linked",
       href:
         args.faceitUrl ||
         `https://www.faceit.com/en/search/players/${args.steamId}`,
+    },
+    {
+      id: "csapi",
+      name: "csapi",
+      status: !args.csapiConfigured
+        ? "needs_key"
+        : args.csapiFound
+          ? "live"
+          : "empty",
+      detail: !args.csapiConfigured
+        ? "Add CSAPI_API_KEY to load TTD / preaim / K/D window"
+        : args.csapiFound
+          ? "TTD, reaction, preaim, K/D, ADR, HLTV, KAST"
+          : "No csapi.kju.dk stats for this Steam ID",
+      href: args.csapiUrl || `https://csapi.kju.dk/${args.steamId}`,
     },
     {
       id: "leetify",
@@ -68,6 +91,16 @@ export function buildTrackerSources(args: BuildArgs): TrackerSource[] {
       href:
         args.leetifyUrl ||
         `https://leetify.com/app/profile/${args.steamId}`,
+    },
+    {
+      id: "csstat",
+      name: "csst.at",
+      status: args.csstatFound ? "live" : "empty",
+      detail: args.csstatFound
+        ? "Steam / FACEIT / Leetify / GC snapshot via HTMX fragments"
+        : "No csst.at fragments available (Cloudflare or empty profile)",
+      href:
+        args.csstatUrl || `https://csst.at/profile/${args.steamId}`,
     },
     {
       id: "csstats",
@@ -84,6 +117,21 @@ export function buildTrackerSources(args: BuildArgs): TrackerSource[] {
         ? "Aim fallback: time to damage, HS%, spotted accuracy"
         : "No Scope ratings found for this Steam ID",
       href: scopeProfileHref(args.steamId, args.scopeUrl),
+    },
+    {
+      id: "csrep",
+      name: "CSRep",
+      status: !args.csrepConfigured
+        ? "needs_key"
+        : args.csrepFound
+          ? "live"
+          : "empty",
+      detail: !args.csrepConfigured
+        ? "Add CSREP_API_KEY or API proxy to load trust + stats window"
+        : args.csrepFound
+          ? "Trust rating, SBA metrics, match stats window"
+          : "No CSRep profile returned",
+      href: args.csrepUrl || `https://csrep.gg/player/${args.steamId}`,
     },
   ];
 }

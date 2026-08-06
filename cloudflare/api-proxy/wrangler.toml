@@ -1,0 +1,10 @@
+name = "cscanner-api-proxy"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Set via: wrangler secret put PROXY_TOKEN
+# wrangler secret put STEAM_API_KEY
+# wrangler secret put FACEIT_API_KEY
+# wrangler secret put LEETIFY_API_KEY
+# wrangler secret put CSREP_API_KEY
+# wrangler secret put CSREP_API_KEY_ID  (optional)

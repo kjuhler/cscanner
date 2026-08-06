@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { BannedFriendsPanel } from "@/components/BannedFriendsPanel";
 import { BansPanel } from "@/components/BansPanel";
 import { CompetitiveRanksPanel } from "@/components/CompetitiveRanksPanel";
+import { CsrepPanel } from "@/components/CsrepPanel";
+import { CsstatPanel } from "@/components/CsstatPanel";
 import { ExternalLinks } from "@/components/ExternalLinks";
 import {
   MapStatsTable,
@@ -16,6 +18,7 @@ import { PlayerHeader, type ProfileTab } from "@/components/PlayerHeader";
 import { PremierPanel } from "@/components/PremierPanel";
 import { SeasonRanksPanel } from "@/components/SeasonRanksPanel";
 import { SiteHeader } from "@/components/SiteHeader";
+import { SourcesBreakdownPanel } from "@/components/SourcesBreakdownPanel";
 import { StatsGrid } from "@/components/StatsGrid";
 import { StatsOverviewGrid } from "@/components/StatsOverviewGrid";
 import { TrackerSources } from "@/components/TrackerSources";
@@ -26,6 +29,10 @@ import {
   formatPercent,
 } from "@/lib/format";
 import { aggregatePlayer } from "@/lib/player/aggregate";
+import { compositeTrustScore } from "@/lib/player/composite";
+import { isCsapiConfigured } from "@/lib/csapi";
+import { isCsrepConfigured } from "@/lib/csrep";
+import { isFaceitConfigured } from "@/lib/faceit";
 import { buildTrackerSources } from "@/lib/sources";
 import { isSteamId64 } from "@/lib/steam";
 
@@ -107,9 +114,14 @@ export default async function ProfilePage({ params, searchParams }: PageProps) {
     tabParam === "maps" ||
     tabParam === "weapons" ||
     tabParam === "banned-friends" ||
-    tabParam === "inventory"
+    tabParam === "inventory" ||
+    tabParam === "sources"
       ? tabParam
       : "overview";
+
+  const headlineTrust = compositeTrustScore(data.composite, data.trust);
+  const csrepConfigured = isCsrepConfigured();
+  const csapiConfigured = isCsapiConfigured();
 
   return (
     <>
@@ -128,8 +140,14 @@ export default async function ProfilePage({ params, searchParams }: PageProps) {
           <>
             <section className="border border-[var(--border)] bg-[var(--surface)]">
               <div className="grid lg:grid-cols-[minmax(14rem,18rem)_1fr] lg:items-start lg:divide-x lg:divide-[var(--border)]">
-                <TrustScorePanel trust={data.trust} bans={data.bans} embedded />
+                <TrustScorePanel
+                  trust={data.trust}
+                  bans={data.bans}
+                  displayScore={headlineTrust}
+                  embedded
+                />
                 <StatsOverviewGrid
+                  csapi={data.csapi}
                   leetify={data.leetify}
                   leetifyMatchRows={data.leetifyMatchRows}
                   faceitPlayer={faceit.player}
@@ -151,6 +169,10 @@ export default async function ProfilePage({ params, searchParams }: PageProps) {
             </div>
 
             <BansPanel bans={data.bans} />
+
+            <CsstatPanel csstat={data.csstat} />
+
+            <CsrepPanel csrep={data.csrep} configured={csrepConfigured} />
 
             <div className="grid gap-4 lg:grid-cols-2">
               <StatsGrid
@@ -295,6 +317,35 @@ export default async function ProfilePage({ params, searchParams }: PageProps) {
           />
         ) : null}
 
+        {activeTab === "sources" ? (
+          <section className="space-y-4">
+            <TrackerSources
+              sources={buildTrackerSources({
+                steamId,
+                hasSteamStats: Boolean(
+                  data.cs2 && !data.cs2.privateOrUnavailable,
+                ),
+                faceitConfigured: isFaceitConfigured(),
+                faceitFound: Boolean(faceit.player),
+                faceitUrl: faceit.player?.faceitUrl ?? null,
+                leetifyFound: Boolean(data.leetify),
+                leetifyUrl: data.leetify?.profileUrl ?? null,
+                scopeFound: Boolean(data.scope),
+                scopeUrl: data.scope?.profileUrl ?? null,
+                csstatFound: Boolean(data.csstat),
+                csstatUrl: data.csstat?.profileUrl ?? null,
+                csapiFound: Boolean(data.csapi),
+                csapiUrl: data.csapi?.profileUrl ?? null,
+                csapiConfigured,
+                csrepConfigured,
+                csrepFound: Boolean(data.csrep),
+                csrepUrl: data.csrep?.profileUrl ?? null,
+              })}
+            />
+            <SourcesBreakdownPanel data={data} csrepConfigured={csrepConfigured} />
+          </section>
+        ) : null}
+
         {activeTab === "inventory" ? (
           <section className="space-y-4">
             <TrackerSources
@@ -303,13 +354,21 @@ export default async function ProfilePage({ params, searchParams }: PageProps) {
                 hasSteamStats: Boolean(
                   data.cs2 && !data.cs2.privateOrUnavailable,
                 ),
-                faceitConfigured: Boolean(process.env.FACEIT_API_KEY),
+                faceitConfigured: isFaceitConfigured(),
                 faceitFound: Boolean(faceit.player),
                 faceitUrl: faceit.player?.faceitUrl ?? null,
                 leetifyFound: Boolean(data.leetify),
                 leetifyUrl: data.leetify?.profileUrl ?? null,
                 scopeFound: Boolean(data.scope),
                 scopeUrl: data.scope?.profileUrl ?? null,
+                csstatFound: Boolean(data.csstat),
+                csstatUrl: data.csstat?.profileUrl ?? null,
+                csapiFound: Boolean(data.csapi),
+                csapiUrl: data.csapi?.profileUrl ?? null,
+                csapiConfigured,
+                csrepConfigured,
+                csrepFound: Boolean(data.csrep),
+                csrepUrl: data.csrep?.profileUrl ?? null,
               })}
             />
             <ExternalLinks

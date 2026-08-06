@@ -25,7 +25,7 @@ export async function searchPlayer(
     if (message.includes("STEAM_API_KEY")) {
       return {
         error:
-          "Steam API key is missing. Add STEAM_API_KEY to your .env.local file.",
+          "Steam API key is missing. Add STEAM_API_KEY (or API_PROXY_URL + API_PROXY_TOKEN) to your .env file.",
       };
     }
     return { error: message };

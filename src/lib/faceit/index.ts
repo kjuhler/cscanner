@@ -1,3 +1,8 @@
+import {
+  apiProxyHeaders,
+  apiProxyUrl,
+  isApiProxyEnabled,
+} from "@/lib/apiProxy";
 import type {
   FaceitMapStats,
   FaceitMatch,
@@ -9,17 +14,33 @@ function getFaceitKey(): string | null {
   return process.env.FACEIT_API_KEY || null;
 }
 
+/** True when FACEIT can be called (local key or CF proxy). */
+export function isFaceitConfigured(): boolean {
+  return Boolean(getFaceitKey()) || isApiProxyEnabled();
+}
+
 async function faceitGet<T>(path: string): Promise<T | null> {
+  const useProxy = isApiProxyEnabled();
   const key = getFaceitKey();
-  if (!key) {
+  if (!useProxy && !key) {
     throw new Error("FACEIT_API_KEY is not configured");
   }
 
-  const res = await fetch(`https://open.faceit.com/data/v4${path}`, {
-    headers: {
-      Authorization: `Bearer ${key}`,
-      Accept: "application/json",
-    },
+  const url = useProxy
+    ? apiProxyUrl("faceit", `data/v4/${path.replace(/^\//, "")}`)
+    : `https://open.faceit.com/data/v4${path}`;
+
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+  };
+  if (useProxy) {
+    Object.assign(headers, apiProxyHeaders());
+  } else if (key) {
+    headers.Authorization = `Bearer ${key}`;
+  }
+
+  const res = await fetch(url, {
+    headers,
     next: { revalidate: 120 },
   });
 

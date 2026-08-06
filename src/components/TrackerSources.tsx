@@ -59,9 +59,9 @@ export function TrackerSources({ sources }: Props) {
         ))}
       </ul>
       <p className="border-t border-[var(--border)] px-5 py-3 text-xs text-[var(--muted)]">
-        Profile Check aggregates public Steam, FACEIT, and Leetify data in one place.
-        Scope.gg and CSStats do not offer public APIs, so we deep-link their
-        profiles like other multi-source trackers.
+        Profile Check aggregates Steam, FACEIT, and csapi.kju.dk in one place.
+        Scope.gg and CSStats do not offer public APIs, so we
+        deep-link their profiles like other multi-source trackers.
       </p>
     </section>
   );

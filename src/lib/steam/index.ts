@@ -1,3 +1,9 @@
+import {
+  apiProxyHeaders,
+  apiProxyUrl,
+  isApiProxyEnabled,
+} from "@/lib/apiProxy";
+
 const STEAM_ID64_RE = /^7656119\d{10}$/;
 
 export function isSteamId64(value: string): boolean {
@@ -64,13 +70,22 @@ async function steamGet<T>(
   path: string,
   params: Record<string, string>,
 ): Promise<T> {
-  const url = new URL(`https://api.steampowered.com/${path}`);
-  url.searchParams.set("key", getSteamKey());
-  for (const [k, v] of Object.entries(params)) {
-    url.searchParams.set(k, v);
+  const useProxy = isApiProxyEnabled();
+  let url: string;
+
+  if (useProxy) {
+    url = apiProxyUrl("steam", path, params);
+  } else {
+    const direct = new URL(`https://api.steampowered.com/${path}`);
+    direct.searchParams.set("key", getSteamKey());
+    for (const [k, v] of Object.entries(params)) {
+      direct.searchParams.set(k, v);
+    }
+    url = direct.toString();
   }
 
-  const res = await fetch(url.toString(), {
+  const res = await fetch(url, {
+    headers: useProxy ? apiProxyHeaders() : undefined,
     next: { revalidate: 120 },
   });
 
