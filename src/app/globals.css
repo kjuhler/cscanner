@@ -13,7 +13,7 @@
   --ok: #3dba7a;
   --warn: #e0a045;
   --danger: #e05a4f;
-  /* Metric severity (normal / højt / sus / insane) */
+  /* Metric severity (normal / high / sus / insane) */
   --metric-normal: #e8ecef;
   --metric-elevated: #f0d24a;
   --metric-suspicious: #ff7a6e;

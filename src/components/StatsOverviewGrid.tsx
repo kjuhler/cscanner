@@ -15,7 +15,7 @@ import { skillLikeTopPercent } from "@/lib/leetify/skillLike";
 import {
   classifyCombatMetrics,
   severityById,
-  severityLabelDa,
+  severityLabel,
   severityTextClass,
   severityBorderClass,
   type MetricFlagId,
@@ -363,10 +363,10 @@ export function StatsOverviewGrid({
                 {flagged && severity ? (
                   <span
                     className={`inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] ${severityTextClass(severity)}`}
-                    title={severityLabelDa(severity)}
+                    title={severityLabel(severity)}
                   >
                     <span aria-hidden>▲</span>
-                    {severityLabelDa(severity)}
+                    {severityLabel(severity)}
                   </span>
                 ) : null}
               </div>

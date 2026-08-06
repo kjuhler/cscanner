@@ -48,25 +48,6 @@ type PlayerContext = {
     hsPercent: number | null;
     winRate: number | null;
   };
-  faceit: {
-    nickname: string | null;
-    faceitUrl: string | null;
-    elo: number | null;
-    skillLevel: number | null;
-    kd: number | null;
-    hsPercent: number | null;
-    winRate: number | null;
-  };
-  csapi: {
-    kd: number | null;
-    adr: number | null;
-    timeToDamageMs: number | null;
-    preaim: number | null;
-    accuracyHead: number | null;
-    wallbangKillPercent: number | null;
-    kast: number | null;
-    hltvRating2: number | null;
-  } | null;
   leetify: {
     profileUrl: string | null;
     premier: number | null;
@@ -75,27 +56,7 @@ type PlayerContext = {
     timeToDamageMs: number | null;
     winrate: number | null;
   };
-  trust: {
-    score: number | null;
-    level: string;
-    insaneCount: number;
-    topSeverity: string | null;
-  };
 };
-
-function trustScoreColor(score: number | null): string {
-  if (score == null) return "var(--muted)";
-  if (score >= 75) return "var(--trust-good)";
-  if (score >= 55) return "var(--trust-elevated)";
-  if (score >= 35) return "var(--trust-suspicious)";
-  return "var(--trust-insane)";
-}
-
-function pct01(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—";
-  const v = n <= 1 ? n * 100 : n;
-  return `${Math.round(v)}%`;
-}
 
 const TYPE_LABEL: Record<MistakeType, string> = {
   cheat: "Cheat signals",
@@ -531,44 +492,7 @@ export function DemoResults({
         if (!res.ok || !Array.isArray(data.contexts)) return;
         const map = new Map<string, PlayerContext>();
         for (const item of data.contexts) {
-          if (!item?.steamId) continue;
-          map.set(item.steamId, {
-            steamId: item.steamId,
-            steam: item.steam ?? {
-              personaName: null,
-              profileUrl: null,
-              accountAgeDays: null,
-              profilePrivate: null,
-              cs2PlaytimeHours: null,
-              kd: null,
-              hsPercent: null,
-              winRate: null,
-            },
-            faceit: item.faceit ?? {
-              nickname: null,
-              faceitUrl: null,
-              elo: null,
-              skillLevel: null,
-              kd: null,
-              hsPercent: null,
-              winRate: null,
-            },
-            csapi: item.csapi ?? null,
-            leetify: item.leetify ?? {
-              profileUrl: null,
-              premier: null,
-              aim: null,
-              preaim: null,
-              timeToDamageMs: null,
-              winrate: null,
-            },
-            trust: item.trust ?? {
-              score: null,
-              level: "unknown",
-              insaneCount: 0,
-              topSeverity: null,
-            },
-          });
+          map.set(item.steamId, item);
         }
         setPlayerContext(map);
       } catch {
@@ -1046,7 +970,7 @@ function PlayerTable({
         {focusId === "all" ? "Players" : "Player stats"}
       </h3>
       <div className="overflow-x-auto border border-[var(--border)]">
-      <table className="w-full min-w-[860px] border-collapse text-left text-sm">
+      <table className="w-full min-w-[720px] border-collapse text-left text-sm">
         <thead className="bg-[var(--bg-elevated)] text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
           <tr>
             <th className="px-3 py-2 font-medium">Player</th>
@@ -1057,7 +981,6 @@ function PlayerTable({
             <th className="px-3 py-2 font-medium">ADR</th>
             <th className="px-3 py-2 font-medium">HS%</th>
             <th className="px-3 py-2 font-medium">Entries</th>
-            <th className="px-3 py-2 font-medium">Trust</th>
             <th className="px-3 py-2 font-medium">Cheat</th>
           </tr>
         </thead>
@@ -1065,7 +988,6 @@ function PlayerTable({
           {players.map((p) => {
             const risk = cheatById.get(p.steamId)?.cheatRisk ?? 0;
             const ctx = contextById.get(p.steamId);
-            const trustScore = ctx?.trust?.score ?? null;
             return (
               <tr key={p.steamId}>
                 <td className="px-3 py-2 font-medium text-[var(--foreground)]">
@@ -1079,14 +1001,6 @@ function PlayerTable({
                       View only
                     </button>
                   ) : null}
-                  <a
-                    href={`/profiles/${p.steamId}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="ml-2 text-xs text-[var(--muted)] underline decoration-dotted"
-                  >
-                    Profile
-                  </a>
                   {ctx?.steam?.profileUrl ? (
                     <a
                       href={ctx.steam.profileUrl}
@@ -1095,16 +1009,6 @@ function PlayerTable({
                       className="ml-2 text-xs text-[var(--muted)] underline decoration-dotted"
                     >
                       Steam
-                    </a>
-                  ) : null}
-                  {ctx?.faceit?.faceitUrl ? (
-                    <a
-                      href={ctx.faceit.faceitUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="ml-2 text-xs text-[var(--muted)] underline decoration-dotted"
-                    >
-                      FACEIT
                     </a>
                   ) : null}
                   {ctx?.leetify?.profileUrl ? (
@@ -1140,39 +1044,6 @@ function PlayerTable({
                   {p.entries}
                 </td>
                 <td
-                  className="px-3 py-2 font-[family-name:var(--font-code)]"
-                  style={{ color: trustScoreColor(trustScore) }}
-                >
-                  {trustScore != null ? trustScore : "—"}
-                  {ctx?.trust?.insaneCount ? (
-                    <span className="ml-1 text-[10px] text-[var(--trust-insane)]">
-                      ▲{ctx.trust.insaneCount}
-                    </span>
-                  ) : null}
-                  {ctx ? (
-                    <div className="mt-1 text-[10px] leading-tight text-[var(--muted)]">
-                      {ctx.steam.cs2PlaytimeHours != null
-                        ? `${ctx.steam.cs2PlaytimeHours}h`
-                        : "—"}
-                      {ctx.faceit.elo != null ? ` · F ${ctx.faceit.elo}` : ""}
-                      {ctx.csapi?.kd != null
-                        ? ` · KD ${ctx.csapi.kd.toFixed(2)}`
-                        : ctx.steam.kd != null
-                          ? ` · KD ${ctx.steam.kd.toFixed(2)}`
-                          : ""}
-                      {ctx.csapi?.timeToDamageMs != null
-                        ? ` · TTD ${Math.round(ctx.csapi.timeToDamageMs)}ms`
-                        : ""}
-                      {ctx.csapi?.wallbangKillPercent != null
-                        ? ` · WB ${pct01(ctx.csapi.wallbangKillPercent)}`
-                        : ""}
-                      {ctx.leetify.premier != null
-                        ? ` · P ${ctx.leetify.premier}`
-                        : ""}
-                    </div>
-                  ) : null}
-                </td>
-                <td
                   className={`px-3 py-2 font-[family-name:var(--font-code)] ${
                     risk >= 40
                       ? "text-[var(--danger)]"
@@ -1182,6 +1053,24 @@ function PlayerTable({
                   }`}
                 >
                   {risk}
+                  {ctx ? (
+                    <div className="mt-1 text-[10px] leading-tight text-[var(--muted)]">
+                      {ctx.steam.cs2PlaytimeHours != null
+                        ? `${ctx.steam.cs2PlaytimeHours}h`
+                        : "—"}
+                      {" · "}
+                      KD{" "}
+                      {ctx.steam.kd != null ? ctx.steam.kd.toFixed(2) : "—"}
+                      {" · "}
+                      HS{" "}
+                      {ctx.steam.hsPercent != null
+                        ? `${ctx.steam.hsPercent}%`
+                        : "—"}
+                      {ctx.leetify.premier != null
+                        ? ` · P ${ctx.leetify.premier}`
+                        : ""}
+                    </div>
+                  ) : null}
                 </td>
               </tr>
             );

@@ -189,11 +189,11 @@ export function countSeverity(
   return flags.filter((f) => f.severity === severity).length;
 }
 
-/** Danish UI labels. */
-export function severityLabelDa(severity: MetricSeverity): string {
+/** English UI labels for severity bands. */
+export function severityLabel(severity: MetricSeverity): string {
   switch (severity) {
     case "elevated":
-      return "Højt";
+      return "High";
     case "suspicious":
       return "Sus";
     case "insane":
