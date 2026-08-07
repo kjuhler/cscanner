@@ -1,3 +1,4 @@
+import { revalidateTag } from "next/cache";
 import type { CsapiStats } from "@/lib/types";
 
 const DEFAULT_BASE = "https://csapi.kju.dk";
@@ -80,10 +81,22 @@ function hasUsefulStats(mapped: CsapiStats): boolean {
   ].some((v) => v != null && v > 0);
 }
 
+function isAbortError(err: unknown): boolean {
+  if (err instanceof Error && /aborted|abort|timeout/i.test(err.message)) {
+    return true;
+  }
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "name" in err &&
+    (err as { name: string }).name === "AbortError"
+  );
+}
+
 async function fetchCsapiRaw(
   steamId: string,
   key: string,
-  opts: { refresh: boolean; timeoutMs: number; cache: RequestCache | undefined },
+  opts: { refresh: boolean; timeoutMs: number },
 ): Promise<CsapiRaw | null> {
   const qs = opts.refresh ? "?r=1" : "";
   const controller = new AbortController();
@@ -97,9 +110,15 @@ async function fetchCsapiRaw(
           "X-API-Key": key,
         },
         signal: controller.signal,
-        ...(opts.cache
-          ? { cache: opts.cache }
-          : { next: { revalidate: 300 } }),
+        // Refresh must not reuse a stale Next cache entry; cached reads revalidate.
+        ...(opts.refresh
+          ? { cache: "no-store" as RequestCache }
+          : {
+              next: {
+                revalidate: 300,
+                tags: [`csapi-${steamId}`],
+              },
+            }),
       },
     );
 
@@ -121,9 +140,8 @@ async function fetchCsapiRaw(
 
 /**
  * Fetch aim/combat window stats from csapi.kju.dk/{steamId64}.
- * Requires CSAPI_API_KEY (header X-API-Key). Soft-fails to null on 404.
- *
- * Upstream cache often returns all zeros; we retry with ?r=1 to force recompute.
+ * Requires CSAPI_API_KEY (header X-API-Key). Soft-fails to null on 404,
+ * zeros, or timeout. Does **not** call ?r=1 (that enqueues upstream).
  */
 export async function getCsapiStats(
   steamId64: string,
@@ -136,35 +154,46 @@ export async function getCsapiStats(
     throw new Error("CSAPI_API_KEY is not configured");
   }
 
-  // Prefer cached lookup, but never persist/trust an all-zero stub.
   let mapped: CsapiStats | null = null;
   try {
     const raw = await fetchCsapiRaw(id, key, {
       refresh: false,
       timeoutMs: TIMEOUT_CACHED_MS,
-      cache: "no-store",
     });
     mapped = raw ? mapStats(id, raw) : null;
   } catch (err) {
-    // Timeout / transient — fall through to force-refresh.
-    const aborted =
-      (err instanceof Error && /aborted|abort|timeout/i.test(err.message)) ||
-      (typeof err === "object" &&
-        err !== null &&
-        "name" in err &&
-        (err as { name: string }).name === "AbortError");
-    if (!aborted) throw err;
+    if (isAbortError(err)) return null;
+    throw err;
   }
 
-  if (!mapped || !hasUsefulStats(mapped)) {
-    const raw = await fetchCsapiRaw(id, key, {
-      refresh: true,
-      timeoutMs: TIMEOUT_REFRESH_MS,
-      cache: undefined,
-    });
-    mapped = raw ? mapStats(id, raw) : null;
+  if (!mapped || !hasUsefulStats(mapped)) return null;
+  return mapped;
+}
+
+/**
+ * Force-refresh csapi stats (`?r=1`). Enqueues recompute upstream — call only
+ * from an explicit user action, never from profile aggregate.
+ */
+export async function refreshCsapiStats(
+  steamId64: string,
+): Promise<CsapiStats | null> {
+  const id = steamId64.trim();
+  if (!/^\d{17}$/.test(id)) {
+    throw new Error("Invalid Steam ID");
   }
 
+  const key = getCsapiKey();
+  if (!key) {
+    throw new Error("CSAPI_API_KEY is not configured");
+  }
+
+  const raw = await fetchCsapiRaw(id, key, {
+    refresh: true,
+    timeoutMs: TIMEOUT_REFRESH_MS,
+  });
+  const mapped = raw ? mapStats(id, raw) : null;
+  // Drop any stale Next data-cache entry from prior cached GETs.
+  revalidateTag(`csapi-${id}`, "max");
   if (!mapped || !hasUsefulStats(mapped)) return null;
   return mapped;
 }

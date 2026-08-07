@@ -37,7 +37,7 @@ import { isSteamId64 } from "@/lib/steam";
 
 type PageProps = {
   params: Promise<{ steamId: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; r?: string }>;
 };
 
 
@@ -59,7 +59,8 @@ export default async function ProfilePage({ params, searchParams }: PageProps) {
     notFound();
   }
 
-  const data = await aggregatePlayer(steamId);
+  const refreshCsapi = resolvedSearchParams.r === "1";
+  const data = await aggregatePlayer(steamId, { refreshCsapi });
 
   if (!data.steam) {
     return (

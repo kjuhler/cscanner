@@ -1,5 +1,9 @@
 import { getCsstatProfile } from "@/lib/csstat";
-import { getCsapiStats, isCsapiConfigured } from "@/lib/csapi";
+import {
+  getCsapiStats,
+  isCsapiConfigured,
+  refreshCsapiStats,
+} from "@/lib/csapi";
 import { getCsrepProfile, isCsrepConfigured } from "@/lib/csrep";
 import {
   getFaceitBans,
@@ -366,10 +370,17 @@ function mergeCsstatGaps(args: {
   };
 }
 
+export type AggregatePlayerOptions = {
+  /** When true (profile `?r=1`), force-refresh csapi upstream. */
+  refreshCsapi?: boolean;
+};
+
 export async function aggregatePlayer(
   steamId: string,
+  options?: AggregatePlayerOptions,
 ): Promise<PlayerAggregate> {
   const errors: string[] = [];
+  const refreshCsapi = Boolean(options?.refreshCsapi);
 
   const [
     steam,
@@ -399,7 +410,13 @@ export async function aggregatePlayer(
         ? settled(getCsrepProfile(steamId), errors, "CSRep")
         : Promise.resolve(null as CsrepProfile | null),
       isCsapiConfigured()
-        ? settled(getCsapiStats(steamId), errors, "csapi")
+        ? settled(
+            refreshCsapi
+              ? refreshCsapiStats(steamId)
+              : getCsapiStats(steamId),
+            errors,
+            "csapi",
+          )
         : Promise.resolve(null),
     ]);
 
